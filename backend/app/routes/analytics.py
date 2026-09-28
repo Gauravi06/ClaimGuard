@@ -57,13 +57,13 @@ def get_stats():
 
 @router.get("/model-performance")
 def get_model_performance():
-    claims = [c for c in db.get_all() if c.true_label is not None and c.prediction is not None]
+    claims = db.get_labeled()
     
     if not claims:
         return {
             "accuracy": None, "precision": None, "recall": None, "f1_score": None, 
             "roc_auc": None, "confusion_matrix": {"tp": 0, "fp": 0, "tn": 0, "fn": 0},
-            "total_labeled": 0, "total_predictions": len(db.get_all())
+            "total_labeled": 0, "total_predictions": db.count()
         }
         
     y_true = [1 if c.true_label else 0 for c in claims]
@@ -99,5 +99,5 @@ def get_model_performance():
             "tp": int(tp), "fp": int(fp), "tn": int(tn), "fn": int(fn)
         },
         "total_labeled": len(claims),
-        "total_predictions": len(db.get_all())
+        "total_predictions": db.count()
     }

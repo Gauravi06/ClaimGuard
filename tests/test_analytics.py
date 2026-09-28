@@ -9,8 +9,7 @@ from datetime import datetime, timezone
 client = TestClient(app)
 
 def clear_db():
-    db.claims.clear()
-    db.claims_list.clear()
+    db.clear()
 
 def test_model_performance_zero_claims():
     clear_db()

@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from app.database import init_db
 from app.ml.pipeline import ml_pipeline
 from app.routes import claims, analytics, seed
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_db()
     print("Training ML pipeline on synthetic data...")
     ml_pipeline.train()
     print("ML pipeline trained successfully.")

@@ -277,8 +277,7 @@ def seed_database(clear_existing: bool = True):
         ml_pipeline.train()
 
     if clear_existing:
-        db.claims.clear()
-        db.claims_list.clear()
+        db.clear()
 
     now = datetime.now(timezone.utc)
     created_claims = []

@@ -72,6 +72,7 @@ ClaimGuard addresses this delayed-feedback loop by deploying a real-time ML risk
 |---|---|
 | **Frontend** | React 18, Tailwind CSS 4, Recharts, Lucide Icons, React Router v6, Vite |
 | **Backend** | Python 3.12, FastAPI, Uvicorn, Pydantic v2 |
+| **Database** | PostgreSQL (Neon), SQLAlchemy 2 (sync), psycopg 3 |
 | **Machine Learning** | scikit-learn, NumPy, Pandas |
 | **Testing** | pytest, FastAPI TestClient |
 
@@ -85,10 +86,12 @@ ClaimGuard/
 │   ├── app/
 │   │   ├── ml/               # ML dataset generator & RandomForest pipeline
 │   │   ├── routes/           # FastAPI endpoints (claims, analytics, seed)
-│   │   ├── database.py       # In-memory claim store
+│   │   ├── database.py       # Claim store (SQLAlchemy; Neon PostgreSQL / SQLite for tests)
+│   │   ├── orm.py            # SQLAlchemy `claims` table definition
 │   │   ├── main.py           # FastAPI application entry point & lifespan
 │   │   ├── models.py         # Pydantic schemas
 │   │   └── seed.py           # Synthetic seed dataset definition & generator
+│   ├── neon_smoke_test.py    # Manual persistence smoke test against Neon
 │   ├── requirements.txt      # Python backend dependencies
 │   ├── run.py                # Server launcher script
 │   └── seed.py               # CLI executable seed command
@@ -102,8 +105,11 @@ ClaimGuard/
 │   ├── package.json
 │   └── vite.config.js        # Vite dev server configuration & API proxy
 ├── tests/
+│   ├── conftest.py           # Forces a throwaway SQLite database for tests
 │   ├── test_analytics.py     # Unit tests for analytics & metric edge cases
+│   ├── test_persistence.py   # Persistence, delayed-label & labeled-only metric tests
 │   └── test_seed.py          # Unit tests for seed generator & performance
+├── .env.example              # Template for DATABASE_URL (copy to .env; never commit .env)
 ├── README.md                 # Project documentation
 ├── progress.md               # Developer progress & roadmap
 └── requirements.txt          # Root Python dependencies
@@ -124,7 +130,25 @@ git clone <repository-url>
 cd ClaimGuard
 ```
 
-### 2. Backend Setup
+### 2. Database Setup (Neon PostgreSQL)
+
+Claims are stored in PostgreSQL so delayed ground-truth labels survive backend restarts.
+
+1. Create a free project at [neon.tech](https://neon.tech) and copy its **pooled** connection string.
+2. Copy the template and set your own value (`.env` is git-ignored; never commit credentials):
+
+```bash
+# Linux/macOS
+cp .env.example .env
+# Windows PowerShell
+Copy-Item .env.example .env
+```
+
+3. Edit `.env` and set `DATABASE_URL=postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require`.
+
+The backend refuses to start if `DATABASE_URL` is missing. The `claims` table is created automatically at startup (`create_all`; there are no migrations yet).
+
+### 3. Backend Setup
 
 ```bash
 # Create and activate Python virtual environment
@@ -142,7 +166,7 @@ python backend/run.py
 ```
 *Backend server runs at `http://localhost:8000` (API documentation available at `http://localhost:8000/docs`).*
 
-### 3. Frontend Setup
+### 4. Frontend Setup
 
 In a separate terminal:
 
@@ -163,6 +187,8 @@ With the backend server running, execute:
 python -m backend.seed
 ```
 This populates the system with 20 realistic claims (7 legitimate, 7 fraud, and 6 unlabeled).
+
+> ⚠️ **WARNING: seeding deletes ALL existing claims.** `python -m backend.seed`, `POST /api/dev/seed` and `POST /api/seed` run with `clear_existing=True` and are **unauthenticated**. Because claims are now persistent, calling any of them against your Neon database permanently wipes the `claims` table. Use them only on a development/branch database, never on data you want to keep. There is currently no guard or authentication (planned for a later iteration).
 
 ### 2. Submit a Claim
 Navigate to **Submit Claim** in the sidebar. Fill in claimant info and risk indicators to receive instant real-time risk scoring and feature explanations.
@@ -186,11 +212,24 @@ Run the test suite using `pytest`:
 $env:PYTHONPATH="backend"; python -m pytest tests/
 ```
 
+The tests always use a throwaway **SQLite** database (`tests/conftest.py` overrides `DATABASE_URL`, so a Neon URL in `.env` is never touched). To run them against a dedicated PostgreSQL test database instead, set `DATABASE_URL_TEST`; the tests clear the `claims` table, so never point it at real data.
+
+### Neon smoke test (manual)
+
+To verify persistence end to end against your real Neon database, including real backend restarts:
+
+```bash
+python backend/neon_smoke_test.py
+```
+
+It never seeds or clears the table, and removes only its own `SMOKE-TEST-*` claims when finished. Stop your normal backend first.
+
 ---
 
 ## Current Limitations
 
-- **In-Memory Storage**: Claims are stored in-memory for MVP simplicity and reset when the backend process restarts.
+- **Persistent Storage, No Migrations Yet**: Claims (including delayed labels) persist in Neon PostgreSQL. The table is created with `create_all` at startup; schema changes are not migrated (Alembic is planned).
+- **Destructive Dev Seed Endpoint**: `POST /api/dev/seed` wipes all claims and has no authentication or guard (see warning above).
 - **Baseline Model**: Uses a synthetic dataset and Random Forest baseline rather than a live production database.
 - **Static Model Training**: Model is trained on application startup; full online retraining/MLOps retraining is planned for future iterations.
 
@@ -198,7 +237,8 @@ $env:PYTHONPATH="backend"; python -m pytest tests/
 
 ## Future Improvements
 
-- [ ] Support persistent database storage (PostgreSQL / SQLite via SQLAlchemy).
+- [x] Support persistent database storage (Neon PostgreSQL via SQLAlchemy).
+- [ ] Add Alembic migrations and guard/authenticate the dev seed endpoint.
 - [ ] Implement automated MLOps pipeline with drift detection and periodic model retraining.
 - [ ] Add SHAP (Shapley Additive exPlanations) for enhanced local feature explainability.
 - [ ] Export claim reports to PDF.

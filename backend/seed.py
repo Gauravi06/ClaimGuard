@@ -38,19 +38,21 @@ def run_seed():
 
     # Fallback to direct Python memory execution if server is offline
     try:
+        from app.database import init_db
         from app.seed import seed_database
+        init_db()  # make sure the claims table exists on a fresh database
         claims = seed_database(clear_existing=True)
         total = len(claims)
         fraud_count = sum(1 for c in claims if c.true_label is True)
         legit_count = sum(1 for c in claims if c.true_label is False)
         unlabeled_count = sum(1 for c in claims if c.true_label is None)
 
-        print(f"[+] Seeded {total} claims in-memory:")
+        print(f"[+] Seeded {total} claims directly into the configured database (all previous claims were deleted):")
         print(f"    - Legitimate claims: {legit_count}")
         print(f"    - Fraud claims:      {fraud_count}")
         print(f"    - Unlabeled claims:  {unlabeled_count}")
-        print("\nNOTE: FastAPI server is not currently running at http://localhost:8000.")
-        print("To seed the live web app, start the backend ('python run.py') and re-run this command.")
+        print("\nNOTE: FastAPI server is not running at http://localhost:8000, so the seed was written straight to DATABASE_URL.")
+        print("WARNING: seeding wipes ALL existing claims. Never run it against a database whose data you want to keep.")
         print("=" * 55)
     except Exception as e:
         print(f"[!] Error seeding database: {e}")

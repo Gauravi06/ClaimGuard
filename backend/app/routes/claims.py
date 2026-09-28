@@ -95,7 +95,7 @@ def simulate_delayed_labels(req: SimulationRequest):
             true_label=is_fraud_truth,
             submission_date=datetime.now(timezone.utc) - timedelta(days=random.randint(1, 10))
         )
-        db.add(claim)
         new_claims.append(claim)
-        
+
+    db.add_many(new_claims)
     return new_claims
