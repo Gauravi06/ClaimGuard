@@ -25,7 +25,7 @@ def get_stats():
     if total_claims == 0:
         return {
             "total_claims": 0, "flagged_claims": 0, "avg_fraud_score": 0, 
-            "labeled_claims": 0, "fraud_rate": 0, "claims_by_type": {}, 
+            "labeled_claims": 0, "pending_claims": 0, "settled_claims": 0, "fraud_rate": 0, "claims_by_type": {}, 
             "claims_by_risk": {"low": 0, "medium": 0, "high": 0}, 
             "recent_claims": []
         }
@@ -49,6 +49,8 @@ def get_stats():
         "flagged_claims": flagged_claims,
         "avg_fraud_score": avg_fraud_score,
         "labeled_claims": num_labeled,
+        "settled_claims": num_labeled,
+        "pending_claims": total_claims - num_labeled,
         "fraud_rate": fraud_rate,
         "claims_by_type": dict(claims_by_type),
         "claims_by_risk": claims_by_risk,
@@ -63,7 +65,8 @@ def get_model_performance():
         return {
             "accuracy": None, "precision": None, "recall": None, "f1_score": None, 
             "roc_auc": None, "confusion_matrix": {"tp": 0, "fp": 0, "tn": 0, "fn": 0},
-            "total_labeled": 0, "total_predictions": db.count()
+            "total_labeled": 0, "total_predictions": db.count(),
+            "correct_predictions": 0, "incorrect_predictions": 0
         }
         
     y_true = [1 if c.true_label else 0 for c in claims]
@@ -99,5 +102,8 @@ def get_model_performance():
             "tp": int(tp), "fp": int(fp), "tn": int(tn), "fn": int(fn)
         },
         "total_labeled": len(claims),
-        "total_predictions": db.count()
+        "total_predictions": db.count(),
+        # Settled claims only: the ORIGINAL stored prediction vs the later ground truth.
+        "correct_predictions": sum(1 for t, p in zip(y_true, y_pred) if t == p),
+        "incorrect_predictions": sum(1 for t, p in zip(y_true, y_pred) if t != p),
     }

@@ -21,7 +21,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def fresh_db():
     if not ml_pipeline.is_trained:  # these tests bypass the app lifespan
-        ml_pipeline.train()
+        ml_pipeline.load_or_train()  # loads the artifact; never trains
     db.clear()
     yield
     db.clear()
@@ -32,6 +32,8 @@ def payload(name="Persist Test", **kw):
         claimant_name=name, claim_amount=30000.0, claim_type="auto", incident_date="2026-09-01",
         days_to_report=40, description="persistence test", prior_claims_count=4,
         police_report_filed=False, witnesses=0,
+        fault=1, deductible=400.0, driver_rating=2, age=40.0, accident_area=1,
+        address_change_claim=0, number_of_suppliments=0.0,
     )
     data.update(kw)
     return data

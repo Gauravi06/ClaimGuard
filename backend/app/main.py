@@ -8,9 +8,9 @@ from app.routes import claims, analytics, seed
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    print("Training ML pipeline on synthetic data...")
-    ml_pipeline.train()
-    print("ML pipeline trained successfully.")
+    print("Loading ClaimGuard ML pipeline (XGBoost real-data champion)...")
+    ml_pipeline.load_or_train()
+    print("ML pipeline loaded successfully.")
     yield
     print("Shutting down ClaimGuard API...")
 

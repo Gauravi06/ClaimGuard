@@ -28,7 +28,9 @@ def create_claim(claim_in: ClaimCreate):
         fraud_score=score,
         risk_level=risk_level,
         explanations=explanations,
-        prediction=score > 0.5
+        prediction=score > 0.5,
+        status="pending",
+        true_label=None,
     )
     
     db.add(claim)
@@ -52,6 +54,21 @@ def update_label(claim_id: UUID, label_update: LabelUpdate):
         raise HTTPException(status_code=404, detail="Claim not found")
     return claim
 
+@claims_router.post("/{claim_id}/settle", response_model=Claim)
+def settle_claim(claim_id: UUID, outcome: LabelUpdate):
+    """Demo of the delayed investigation outcome.
+
+    Reveals the ground truth of a PENDING claim and marks it SETTLED. The original
+    prediction, fraud score, risk level and explanations are never touched, so the
+    stored prediction can be evaluated against the label that arrived later.
+    """
+    existing = db.get(claim_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    if existing.true_label is not None:
+        raise HTTPException(status_code=409, detail="Claim is already settled; ground truth is final")
+    return db.update_label(claim_id, outcome.true_label)
+
 @simulate_router.post("/delayed-labels", response_model=List[Claim])
 def simulate_delayed_labels(req: SimulationRequest):
     new_claims = []
@@ -74,7 +91,14 @@ def simulate_delayed_labels(req: SimulationRequest):
             "description": "Simulated claim data for testing",
             "prior_claims_count": random.randint(2, 5) if is_fraud_truth else random.randint(0, 1),
             "police_report_filed": not is_fraud_truth,
-            "witnesses": 0 if is_fraud_truth else random.randint(0, 2)
+            "witnesses": 0 if is_fraud_truth else random.randint(0, 2),
+            "fault": 1 if is_fraud_truth else random.choice([0, 1]),
+            "deductible": 500.0 if (is_fraud_truth and random.random() < 0.3) else 400.0,
+            "driver_rating": random.randint(2, 4) if is_fraud_truth else random.randint(1, 3),
+            "age": float(random.randint(20, 60)),
+            "accident_area": 1,
+            "address_change_claim": random.choice([2, 3, 4]) if (is_fraud_truth and random.random() < 0.4) else 0,
+            "number_of_suppliments": random.choice([4.0, 6.0]) if is_fraud_truth else 0.0,
         }
         
         score = ml_pipeline.predict(claim_data)
@@ -93,6 +117,7 @@ def simulate_delayed_labels(req: SimulationRequest):
             explanations=explanations,
             prediction=score > 0.5,
             true_label=is_fraud_truth,
+            status="settled",
             submission_date=datetime.now(timezone.utc) - timedelta(days=random.randint(1, 10))
         )
         new_claims.append(claim)

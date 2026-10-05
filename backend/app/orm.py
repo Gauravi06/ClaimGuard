@@ -22,7 +22,7 @@ class ClaimRow(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
 
-    # --- claim inputs (ClaimBase) ---
+    # --- claim inputs (ClaimBase - baseline 7 features + metadata) ---
     claimant_name: Mapped[str] = mapped_column(Text, nullable=False)
     claim_amount: Mapped[float] = mapped_column(Double, nullable=False)
     claim_type: Mapped[str] = mapped_column(String, nullable=False)
@@ -33,6 +33,15 @@ class ClaimRow(Base):
     prior_claims_count: Mapped[int] = mapped_column(Integer, nullable=False)
     police_report_filed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     witnesses: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # --- claim inputs (ClaimBase - expanded 7 real-data features; required, no defaults) ---
+    fault: Mapped[int] = mapped_column(Integer, nullable=False)
+    deductible: Mapped[float] = mapped_column(Double, nullable=False)
+    driver_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    age: Mapped[float] = mapped_column(Double, nullable=False)
+    accident_area: Mapped[int] = mapped_column(Integer, nullable=False)
+    address_change_claim: Mapped[int] = mapped_column(Integer, nullable=False)
+    number_of_suppliments: Mapped[float] = mapped_column(Double, nullable=False)
 
     # --- prediction, computed once at creation and never re-scored ---
     fraud_score: Mapped[float] = mapped_column(Double, nullable=False)
