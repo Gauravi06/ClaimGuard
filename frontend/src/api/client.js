@@ -38,3 +38,29 @@ export const getModelPerformance = async () => {
   const response = await api.get('/analytics/model-performance');
   return response.data;
 };
+
+// Simulation Pipeline API (/api/sim)
+export const getSimClock = async () => {
+  const response = await api.get('/sim/clock');
+  return response.data;
+};
+
+export const advanceSim = async (days = 7) => {
+  const response = await api.post('/sim/advance', { days });
+  return response.data;
+};
+
+export const getSimPending = async () => {
+  const response = await api.get('/sim/pending');
+  return response.data;
+};
+
+export const getSimSettled = async () => {
+  const response = await api.get('/sim/settled');
+  return response.data;
+};
+
+export const getSimMetrics = async () => {
+  const response = await api.get('/sim/metrics');
+  return response.data;
+};

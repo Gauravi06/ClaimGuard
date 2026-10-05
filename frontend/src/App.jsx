@@ -7,6 +7,7 @@ import ClaimsTable from './components/ClaimsTable';
 import ClaimDetail from './components/ClaimDetail';
 import ModelPerformance from './components/ModelPerformance';
 import Simulator from './components/Simulator';
+import SimulationDashboard from './components/SimulationDashboard';
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/simulation" element={<SimulationDashboard />} />
           <Route path="/submit" element={<ClaimForm />} />
           <Route path="/claims" element={<ClaimsTable />} />
           <Route path="/claims/:id" element={<ClaimDetail />} />
