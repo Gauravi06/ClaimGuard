@@ -4,7 +4,7 @@ import random
 
 # Generate a static pool of claims to act as our database for the stub
 _claims = []
-_start_date = date(2015, 1, 1)
+_start_date = date(2015, 2, 1)
 random.seed(42)
 
 for i in range(1, 101):  # 100 claims total
