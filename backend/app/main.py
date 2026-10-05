@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import init_db
 from app.ml.pipeline import ml_pipeline
-from app.routes import claims, analytics, seed
+from app.routes import claims, analytics, seed, sim
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,6 +28,7 @@ app.include_router(claims.claims_router)
 app.include_router(claims.simulate_router)
 app.include_router(seed.router)
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(sim.router)
 
 @app.get("/")
 def root():
