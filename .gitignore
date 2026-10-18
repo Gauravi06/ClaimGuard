@@ -43,5 +43,6 @@ Thumbs.db
 
 # Logs
 *.log
+mlruns/
 backend/mlruns/
 backend/data/insurance_claims.csv
