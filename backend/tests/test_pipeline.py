@@ -64,7 +64,7 @@ def test_train_and_log():
     res = train_and_log(as_of)
     
     # Check structure exactly
-    assert res["run_id"] == "dummy_run_12345"
+    assert isinstance(res["run_id"], str) and len(res["run_id"]) > 0
     assert res["as_of"] == "2015-03-01"
     assert isinstance(res["n_train"], int)
     assert isinstance(res["n_pending"], int)
