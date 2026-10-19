@@ -1,9 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import init_db
 from app.ml.pipeline import ml_pipeline
 from app.routes import claims, analytics, seed, sim
+from app.metrics import get_metrics_bytes, CONTENT_TYPE_LATEST
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,3 +34,9 @@ app.include_router(sim.router)
 @app.get("/")
 def root():
     return {"message": "Welcome to ClaimGuard API"}
+
+@app.get("/metrics")
+def prometheus_metrics():
+    """Prometheus exposition format metrics for ClaimGuard simulation."""
+    return Response(content=get_metrics_bytes(), media_type=CONTENT_TYPE_LATEST)
+

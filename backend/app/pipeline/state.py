@@ -25,6 +25,7 @@ class SimulationState:
         self.simulated_date: date = self.start_date
         self.last_retrain_settled_count: int = 0
         self.model_version: int = 0
+        self.retrains_total: int = 0
         self.latest_metrics: Optional[Dict[str, Any]] = None
 
     def reset(self, start_date: Optional[date] = None) -> None:
@@ -33,12 +34,48 @@ class SimulationState:
         self.simulated_date = self.start_date
         self.last_retrain_settled_count = 0
         self.model_version = 0
+        self.retrains_total = 0
         self.latest_metrics = None
 
     def advance_date(self, days: int) -> date:
         """Increase simulated_date by the specified number of days and return it."""
         self.simulated_date += timedelta(days=days)
         return self.simulated_date
+
+    @property
+    def settled_claims_count(self) -> int:
+        return len(simulation.get_settled(self.simulated_date))
+
+    @property
+    def pending_backlog_count(self) -> int:
+        return len(simulation.get_pending(self.simulated_date))
+
+    @property
+    def newly_settled_since_retrain(self) -> int:
+        return self.settled_claims_count - self.last_retrain_settled_count
+
+    @property
+    def last_retrain_pr_auc(self) -> float:
+        if self.model_version == 0 or not self.latest_metrics:
+            return 0.0
+        return float(self.latest_metrics.get("metrics", {}).get("pr_auc", 0.0))
+
+    @property
+    def simulated_date_epoch(self) -> float:
+        from datetime import datetime, timezone
+        dt = datetime(self.simulated_date.year, self.simulated_date.month, self.simulated_date.day, tzinfo=timezone.utc)
+        return dt.timestamp()
+
+    def get_prometheus_metrics(self) -> Dict[str, Any]:
+        return {
+            "model_version": self.model_version,
+            "settled_claims": self.settled_claims_count,
+            "pending_backlog": self.pending_backlog_count,
+            "newly_settled_since_retrain": self.newly_settled_since_retrain,
+            "last_retrain_pr_auc": self.last_retrain_pr_auc,
+            "simulated_date_epoch": self.simulated_date_epoch,
+            "retrains_total": self.retrains_total,
+        }
 
     def advance(self, days: int = 7) -> Dict[str, Any]:
         """
@@ -53,7 +90,7 @@ class SimulationState:
            - call train_and_log(as_of)
            - store result in latest_metrics
            - set last_retrain_settled_count = settled_count
-           - increment model_version
+           - increment model_version and retrains_total
         6. Return {simulated_date, newly_settled, retrained, model_version}.
         """
         self.advance_date(days)
@@ -70,6 +107,7 @@ class SimulationState:
         if should_retrain:
             metrics_dict = training.train_and_log(as_of)
             self.model_version += 1
+            self.retrains_total += 1
             metrics_dict["model_version"] = self.model_version
             self.latest_metrics = metrics_dict
             self.last_retrain_settled_count = settled_count
@@ -98,3 +136,7 @@ def reset_state(start_date: Optional[date] = None) -> None:
 
 def get_state() -> SimulationState:
     return state
+
+def get_prometheus_metrics() -> Dict[str, Any]:
+    return state.get_prometheus_metrics()
+
