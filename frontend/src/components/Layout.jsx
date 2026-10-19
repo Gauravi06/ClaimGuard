@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FilePlus, FileText, Activity, Clock, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, FilePlus, FileText, Activity, Clock, ShieldAlert, FastForward } from 'lucide-react';
 
 const Layout = ({ children }) => {
   const location = useLocation();
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { name: 'Simulation', path: '/simulation', icon: FastForward },
     { name: 'Submit Claim', path: '/submit', icon: FilePlus },
     { name: 'Claims', path: '/claims', icon: FileText },
     { name: 'Model Performance', path: '/performance', icon: Activity },
