@@ -174,17 +174,23 @@ def test_existing_claims_endpoints_still_work():
     assert res_get.status_code == 200
     assert isinstance(res_get.json(), list)
 
-    # Existing POST /api/claims
     claim_payload = {
         "claimant_name": "Jane Doe",
         "claim_amount": 3500.0,
-        "claim_type": "auto",
+        "claim_type": "sedan",
         "incident_date": "2026-02-01",
         "days_to_report": 3,
         "description": "Minor dent on parking lot",
         "prior_claims_count": 0,
         "police_report_filed": True,
-        "witnesses": 1
+        "witnesses": 1,
+        "fault": 0,
+        "deductible": 400.0,
+        "driver_rating": 2,
+        "age": 38.0,
+        "accident_area": 1,
+        "address_change_claim": 0,
+        "number_of_suppliments": 0.0,
     }
     res_post = client.post("/api/claims", json=claim_payload)
     assert res_post.status_code == 200
