@@ -29,3 +29,17 @@ GET  /settled  -> same plus is_fraud, label_available_at
 GET  /metrics  -> {"model_version", "as_of", "n_train", "precision", "recall", "f1", "pr_auc"}
 Risk: low < 0.3, medium 0.3-0.7, high >= 0.7 (lowercase). Prediction = score > 0.5.
 Use /api/sim, not /api/claims (the UUID route would return 422).
+
+## S4. Prometheus Metrics (GET /metrics)
+Exposes simulation metrics in Prometheus exposition format (not under `/api/sim`).
+Values sourced exclusively from `app/pipeline/state.py`.
+- Gauges:
+  - `claimguard_model_version`: current simulation model version (0 before first model exists)
+  - `claimguard_settled_claims`: count of settled claims as of simulated date
+  - `claimguard_pending_backlog`: count of pending claims backlog as of simulated date
+  - `claimguard_newly_settled_since_retrain`: newly settled claims accumulated since last retrain
+  - `claimguard_last_retrain_pr_auc`: PR-AUC from latest retrain (0.0 before first model exists)
+  - `claimguard_simulated_date_epoch`: current simulated date as Unix epoch timestamp (seconds)
+- Counter:
+  - `claimguard_retrains_total`: total number of model retraining events
+
