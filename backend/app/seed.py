@@ -272,9 +272,46 @@ SEED_CLAIMS_DATA = [
     },
 ]
 
+def _model_fields_for(item: dict) -> dict:
+    """Explicit, label-consistent values for the 7 real-data model features.
+
+    Seed claims are demo data: they must still carry the full required model
+    input set explicitly (never fabricated at the prediction boundary).
+    """
+    if item["true_label"] is True:
+        return {
+            "fault": 1,
+            "deductible": 500.0,
+            "driver_rating": 3,
+            "age": 35.0,
+            "accident_area": 1,
+            "address_change_claim": 2,
+            "number_of_suppliments": 4.0,
+        }
+    if item["true_label"] is False:
+        return {
+            "fault": 0,
+            "deductible": 400.0,
+            "driver_rating": 1,
+            "age": 45.0,
+            "accident_area": 1,
+            "address_change_claim": 0,
+            "number_of_suppliments": 0.0,
+        }
+    return {
+        "fault": 1,
+        "deductible": 400.0,
+        "driver_rating": 2,
+        "age": 40.0,
+        "accident_area": 1,
+        "address_change_claim": 0,
+        "number_of_suppliments": 0.0,
+    }
+
+
 def seed_database(clear_existing: bool = True):
     if not ml_pipeline.is_trained:
-        ml_pipeline.train()
+        ml_pipeline.load_or_train()
 
     if clear_existing:
         db.clear()
@@ -293,6 +330,7 @@ def seed_database(clear_existing: bool = True):
             "prior_claims_count": item["prior_claims_count"],
             "police_report_filed": item["police_report_filed"],
             "witnesses": item["witnesses"],
+            **_model_fields_for(item),
         }
 
         # Predict score & explanations using the model

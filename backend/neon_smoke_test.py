@@ -113,7 +113,9 @@ def row_count():
 
 def payload(name, **kw):
     d = dict(claimant_name=name, claim_amount=30000.0, claim_type="auto", incident_date="2026-09-01",
-             days_to_report=40, description=DESC, prior_claims_count=4, police_report_filed=False, witnesses=0)
+             days_to_report=40, description=DESC, prior_claims_count=4, police_report_filed=False, witnesses=0,
+             fault=1, deductible=400.0, driver_rating=2, age=40.0, accident_area=1,
+             address_change_claim=0, number_of_suppliments=0.0)
     d.update(kw)
     return d
 
