@@ -17,6 +17,8 @@ def get_earliest_filed_at() -> date:
         pass
     return date(2015, 2, 1)
 
+MIN_SETTLED: int = 25
+
 class SimulationState:
     def __init__(self, start_date: Optional[date] = None):
         self.start_date: date = start_date if start_date is not None else get_earliest_filed_at()
@@ -43,8 +45,10 @@ class SimulationState:
         Advance the clock and evaluate the retrain trigger.
         1. Advance simulated_date by days.
         2. Calculate settled_count = len(get_settled(as_of)).
-        3. Calculate newly_settled = settled_count - last_retrain_settled_count.
-        4. Retrain if there has never been a model yet (model_version == 0) or newly_settled >= 25.
+        3. Calculate newly_settled = settled_count - self.last_retrain_settled_count.
+        4. Retrain only when settled_count >= MIN_SETTLED and:
+           - either no model exists yet (model_version == 0), OR
+           - newly_settled >= MIN_SETTLED.
         5. When retraining:
            - call train_and_log(as_of)
            - store result in latest_metrics
@@ -59,7 +63,9 @@ class SimulationState:
         settled_count = len(settled_df)
         newly_settled = settled_count - self.last_retrain_settled_count
 
-        should_retrain = (self.model_version == 0) or (newly_settled >= 25)
+        should_retrain = (settled_count >= MIN_SETTLED) and (
+            self.model_version == 0 or newly_settled >= MIN_SETTLED
+        )
 
         if should_retrain:
             metrics_dict = training.train_and_log(as_of)

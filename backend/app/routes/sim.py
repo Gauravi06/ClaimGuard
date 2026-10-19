@@ -13,21 +13,25 @@ sim_router = router  # Alias for flexible importing
 class AdvanceRequest(BaseModel):
     days: int = Field(default=7, description="Number of days to advance the simulation clock")
 
-def get_risk_level(score: float) -> str:
+def get_risk_level(score: Optional[float]) -> Optional[str]:
     """
     Risk rules:
     - low < 0.3
     - medium 0.3 to < 0.7
     - high >= 0.7
     """
+    if score is None:
+        return None
     if score >= 0.7:
         return "high"
     elif score >= 0.3:
         return "medium"
     return "low"
 
-def get_prediction(score: float) -> bool:
+def get_prediction(score: Optional[float]) -> Optional[bool]:
     """Prediction rule: true only when fraud_score > 0.5."""
+    if score is None:
+        return None
     return score > 0.5
 
 @router.get("/clock")
@@ -51,6 +55,7 @@ def get_pending_endpoint() -> Dict[str, Any]:
     """
     Return all pending claims as of the simulated date.
     Pending claims NEVER include is_fraud, investigation_days, or label_available_at.
+    Before the first model is trained (model_version == 0), fraud_score is null.
     """
     as_of = state.simulated_date
     df = get_pending(as_of)
@@ -62,14 +67,19 @@ def get_pending_endpoint() -> Dict[str, Any]:
             "claims": []
         }
 
-    scores = score_claims(df)
+    scores = score_claims(df) if state.model_version > 0 else None
     claims_list: List[Dict[str, Any]] = []
 
     for i, row in enumerate(df.to_dict(orient="records")):
-        score = float(scores[i])
-        row["fraud_score"] = score
-        row["risk_level"] = get_risk_level(score)
-        row["prediction"] = get_prediction(score)
+        if scores is not None and i < len(scores):
+            score = float(scores[i])
+            row["fraud_score"] = score
+            row["risk_level"] = get_risk_level(score)
+            row["prediction"] = get_prediction(score)
+        else:
+            row["fraud_score"] = None
+            row["risk_level"] = None
+            row["prediction"] = None
 
         # Enforce contract: pending claims NEVER expose true labels or investigation window
         row.pop("is_fraud", None)
@@ -94,6 +104,7 @@ def get_settled_endpoint() -> Dict[str, Any]:
     """
     Return all settled claims as of the simulated date.
     Settled claims include true label (is_fraud) and label_available_at.
+    Before the first model is trained (model_version == 0), fraud_score is null.
     """
     as_of = state.simulated_date
     df = get_settled(as_of)
@@ -105,14 +116,19 @@ def get_settled_endpoint() -> Dict[str, Any]:
             "claims": []
         }
 
-    scores = score_claims(df)
+    scores = score_claims(df) if state.model_version > 0 else None
     claims_list: List[Dict[str, Any]] = []
 
     for i, row in enumerate(df.to_dict(orient="records")):
-        score = float(scores[i])
-        row["fraud_score"] = score
-        row["risk_level"] = get_risk_level(score)
-        row["prediction"] = get_prediction(score)
+        if scores is not None and i < len(scores):
+            score = float(scores[i])
+            row["fraud_score"] = score
+            row["risk_level"] = get_risk_level(score)
+            row["prediction"] = get_prediction(score)
+        else:
+            row["fraud_score"] = None
+            row["risk_level"] = None
+            row["prediction"] = None
 
         # Ensure all date/datetime objects are ISO strings
         for k, v in row.items():
@@ -133,9 +149,11 @@ def get_metrics_endpoint() -> Dict[str, Any]:
     Return the latest simulation training metrics.
     Handles None gracefully if queried before first model training.
     """
-    if state.latest_metrics is None:
+    if state.model_version == 0 or state.latest_metrics is None:
         return {
             "model_version": 0,
+            "status": "no model yet",
+            "message": "no model yet",
             "as_of": state.simulated_date.isoformat(),
             "n_train": 0,
             "precision": 0.0,
@@ -147,6 +165,8 @@ def get_metrics_endpoint() -> Dict[str, Any]:
     metrics = state.latest_metrics.get("metrics", {})
     return {
         "model_version": state.model_version,
+        "status": "active",
+        "message": "active",
         "as_of": state.latest_metrics.get("as_of", state.simulated_date.isoformat()),
         "n_train": state.latest_metrics.get("n_train", 0),
         "precision": float(metrics.get("precision", 0.0)),

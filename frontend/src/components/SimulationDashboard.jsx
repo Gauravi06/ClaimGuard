@@ -82,6 +82,13 @@ const SimulationDashboard = () => {
 
   // Helper for rendering risk badges
   const renderRiskBadge = (level) => {
+    if (!level) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500">
+          no model yet
+        </span>
+      );
+    }
     const normalized = (level || 'low').toLowerCase();
     if (normalized === 'high') {
       return (
@@ -106,6 +113,13 @@ const SimulationDashboard = () => {
 
   // Helper for rendering prediction status
   const renderPredictionBadge = (prediction, score) => {
+    if (score === null || score === undefined || prediction === null || prediction === undefined) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500">
+          no model yet
+        </span>
+      );
+    }
     const isFraud = prediction ?? (score > 0.5);
     return isFraud ? (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700 border border-red-200">
@@ -253,11 +267,11 @@ const SimulationDashboard = () => {
           </span>
           <div className="mt-2 flex items-baseline space-x-1">
             <span className="text-2xl font-bold text-slate-900">
-              {metrics && metrics.model_version > 0 ? `v${metrics.model_version}` : 'No Model'}
+              {metrics && metrics.model_version > 0 ? `v${metrics.model_version}` : 'no model yet'}
             </span>
           </div>
           <span className="text-xs text-slate-400 mt-1 block">
-            {metrics && metrics.model_version > 0 ? 'Active in Pipeline' : 'Awaiting 1st Retrain'}
+            {metrics && metrics.model_version > 0 ? 'Active in Pipeline' : 'Awaiting 25 Settled Claims'}
           </span>
         </div>
 
@@ -426,23 +440,27 @@ const SimulationDashboard = () => {
                           </span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-mono font-bold text-slate-800">
-                              {(Number(claim.fraud_score || 0) * 100).toFixed(1)}%
-                            </span>
-                            <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className={`h-1.5 rounded-full ${
-                                  claim.fraud_score >= 0.7
-                                    ? 'bg-rose-500'
-                                    : claim.fraud_score >= 0.3
-                                    ? 'bg-amber-500'
-                                    : 'bg-emerald-500'
-                                }`}
-                                style={{ width: `${(claim.fraud_score || 0) * 100}%` }}
-                              ></div>
+                          {claim.fraud_score === null || claim.fraud_score === undefined ? (
+                            <span className="text-xs font-medium text-slate-400 italic">no model yet</span>
+                          ) : (
+                            <div className="flex items-center space-x-2">
+                              <span className="font-mono font-bold text-slate-800">
+                                {(Number(claim.fraud_score) * 100).toFixed(1)}%
+                              </span>
+                              <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className={`h-1.5 rounded-full ${
+                                    claim.fraud_score >= 0.7
+                                      ? 'bg-rose-500'
+                                      : claim.fraud_score >= 0.3
+                                      ? 'bg-amber-500'
+                                      : 'bg-emerald-500'
+                                  }`}
+                                  style={{ width: `${Number(claim.fraud_score) * 100}%` }}
+                                ></div>
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           {renderPredictionBadge(claim.prediction, claim.fraud_score)}
@@ -513,9 +531,13 @@ const SimulationDashboard = () => {
                             ${Number(claim.total_claim_amount || 0).toLocaleString()}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="font-mono font-semibold text-slate-800">
-                              {(Number(claim.fraud_score || 0) * 100).toFixed(1)}%
-                            </span>
+                            {claim.fraud_score === null || claim.fraud_score === undefined ? (
+                              <span className="text-xs font-medium text-slate-400 italic">no model yet</span>
+                            ) : (
+                              <span className="font-mono font-semibold text-slate-800">
+                                {(Number(claim.fraud_score) * 100).toFixed(1)}%
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-4">
                             {renderPredictionBadge(claim.prediction, claim.fraud_score)}
@@ -532,7 +554,9 @@ const SimulationDashboard = () => {
                             )}
                           </td>
                           <td className="py-3 px-4">
-                            {isCorrect ? (
+                            {claim.fraud_score === null || claim.fraud_score === undefined ? (
+                              <span className="text-xs text-slate-400 italic">no model yet</span>
+                            ) : isCorrect ? (
                               <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded flex items-center w-fit">
                                 <CheckCircle2 className="w-3 h-3 mr-1" /> Match
                               </span>

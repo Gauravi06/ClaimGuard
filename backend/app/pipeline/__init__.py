@@ -1,6 +1,6 @@
 from .simulation import get_settled, get_pending
 from .training import train_and_log, score_claims
-from .state import state, advance, advance_date, reset_state, SimulationState
+from .state import state, advance, advance_date, reset_state, SimulationState, MIN_SETTLED
 
 __all__ = [
     "get_settled",
@@ -12,4 +12,5 @@ __all__ = [
     "advance_date",
     "reset_state",
     "SimulationState",
+    "MIN_SETTLED",
 ]

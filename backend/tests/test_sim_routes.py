@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from datetime import date
+from datetime import date, timedelta
 
 from app.main import app
 from app.pipeline.state import reset_state, state
@@ -21,39 +21,61 @@ def test_get_sim_clock():
     assert response.status_code == 200
     data = response.json()
     assert "simulated_date" in data
-    assert data["simulated_date"] == "2015-02-01"
+    assert data["simulated_date"] == state.start_date.isoformat()
 
 def test_post_sim_advance_default():
-    """2. POST /api/sim/advance with default 7 days advances date and triggers initial retrain."""
+    """2. POST /api/sim/advance with default 7 days advances date; 0 settled claims -> no retrain."""
     # When no body is provided, defaults to 7 days
     response = client.post("/api/sim/advance")
     assert response.status_code == 200
     data = response.json()
-    assert data["simulated_date"] == "2015-02-08"
-    assert data["newly_settled"] == 0
-    assert data["retrained"] is True
-    assert data["model_version"] == 1
+    expected_date = (state.start_date + timedelta(days=7)).isoformat()
+    assert data["simulated_date"] == expected_date
+    assert data["retrained"] is False
+    assert data["model_version"] == 0
 
 def test_post_sim_advance_custom_days():
-    """3. POST /api/sim/advance with a custom number of days."""
+    """3. POST /api/sim/advance with 14 days (8 settled < 25) -> no retrain."""
     response = client.post("/api/sim/advance", json={"days": 14})
     assert response.status_code == 200
     data = response.json()
-    assert data["simulated_date"] == "2015-02-15"
+    expected_date = (state.start_date + timedelta(days=14)).isoformat()
+    assert data["simulated_date"] == expected_date
+    assert data["retrained"] is False
+    assert data["model_version"] == 0
+
+def test_post_sim_advance_triggers_first_retrain_at_25():
+    """POST /api/sim/advance with 28 days (settled >= 25) triggers first retrain to v1."""
+    response = client.post("/api/sim/advance", json={"days": 28})
+    assert response.status_code == 200
+    data = response.json()
     assert data["retrained"] is True
     assert data["model_version"] == 1
 
+def test_pending_fraud_score_null_before_first_retrain():
+    """Pending claims have null fraud_score and 'no model yet' before first retrain."""
+    # At Day 0 (before advance or model)
+    response = client.get("/api/sim/pending")
+    assert response.status_code == 200
+    claims = response.json()["claims"]
+    assert len(claims) > 0
+    for claim in claims:
+        assert claim["fraud_score"] is None
+        assert claim["risk_level"] is None
+        assert claim["prediction"] is None
+
 def test_get_sim_pending():
-    """4. GET /api/sim/pending returns claims with fraud_score and risk_level."""
-    # Advance clock to ensure claims exist
-    client.post("/api/sim/advance", json={"days": 28})  # 2015-03-01
+    """4. GET /api/sim/pending returns claims with fraud_score and risk_level once model is trained."""
+    # Advance clock 28 days to ensure settled >= 25 and model is trained
+    client.post("/api/sim/advance", json={"days": 28})
     response = client.get("/api/sim/pending")
     assert response.status_code == 200
     data = response.json()
     assert "as_of" in data
     assert "count" in data
     assert "claims" in data
-    assert data["as_of"] == "2015-03-01"
+    expected_date = (state.start_date + timedelta(days=28)).isoformat()
+    assert data["as_of"] == expected_date
     assert data["count"] == len(data["claims"])
     assert data["count"] > 0
 
@@ -80,7 +102,7 @@ def test_pending_never_exposes_label_columns():
 
 def test_get_sim_settled():
     """5. GET /api/sim/settled returns claims including true labels."""
-    client.post("/api/sim/advance", json={"days": 28})  # 2015-03-01
+    client.post("/api/sim/advance", json={"days": 28})
     response = client.get("/api/sim/settled")
     assert response.status_code == 200
     data = response.json()
@@ -98,27 +120,35 @@ def test_get_sim_settled():
     assert "label_available_at" in first_claim
 
 def test_get_sim_metrics():
-    """6. GET /api/sim/metrics handles both pre-training and post-training states."""
+    """6. GET /api/sim/metrics handles both pre-training ('no model yet') and post-training states."""
     # Pre-training (before any advance)
     res_initial = client.get("/api/sim/metrics")
     assert res_initial.status_code == 200
     data_initial = res_initial.json()
     assert data_initial["model_version"] == 0
     assert data_initial["n_train"] == 0
-    assert data_initial["precision"] == 0.0
+    assert data_initial["status"] == "no model yet"
 
-    # Post-training (after first advance)
+    # Advance 7 days (0 settled claims -> still no model yet)
     client.post("/api/sim/advance", json={"days": 7})
-    res_post = client.get("/api/sim/metrics")
-    assert res_post.status_code == 200
-    data_post = res_post.json()
-    assert data_post["model_version"] == 1
-    assert data_post["as_of"] == "2015-02-08"
-    assert "n_train" in data_post
-    assert isinstance(data_post["precision"], float)
-    assert isinstance(data_post["recall"], float)
-    assert isinstance(data_post["f1"], float)
-    assert isinstance(data_post["pr_auc"], float)
+    res_post7 = client.get("/api/sim/metrics")
+    assert res_post7.status_code == 200
+    data_post7 = res_post7.json()
+    assert data_post7["model_version"] == 0
+    assert data_post7["status"] == "no model yet"
+
+    # Advance 21 more days (total 28 days -> settled >= 25 -> model v1)
+    client.post("/api/sim/advance", json={"days": 21})
+    res_post28 = client.get("/api/sim/metrics")
+    assert res_post28.status_code == 200
+    data_post28 = res_post28.json()
+    assert data_post28["model_version"] == 1
+    assert data_post28["status"] == "active"
+    assert data_post28["n_train"] >= 25
+    assert isinstance(data_post28["precision"], float)
+    assert isinstance(data_post28["recall"], float)
+    assert isinstance(data_post28["f1"], float)
+    assert isinstance(data_post28["pr_auc"], float)
 
 def test_risk_level_boundaries():
     """8. Risk-level boundaries: <0.3 low, 0.3-0.7 medium, >=0.7 high."""

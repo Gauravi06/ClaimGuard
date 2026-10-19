@@ -46,3 +46,13 @@ Thumbs.db
 mlruns/
 backend/mlruns/
 backend/data/insurance_claims.csv
+
+# Database
+claims.db
+*.db
+*.sqlite3
+
+# Local tools & presentation scripts
+create_ppt.py
+*.pptx
+
