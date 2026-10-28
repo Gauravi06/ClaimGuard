@@ -1,0 +1,7 @@
+node_modules
+.git
+mlruns
+*.db
+__pycache__
+frontend/dist
+.venv
