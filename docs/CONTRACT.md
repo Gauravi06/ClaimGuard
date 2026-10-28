@@ -43,3 +43,22 @@ Values sourced exclusively from `app/pipeline/state.py`.
 - Counter:
   - `claimguard_retrains_total`: total number of model retraining events
 
+## S5. Model Promotion (R1)
+train_and_log(as_of: date) -> dict
+  Optional fields added:
+  - "promoted": bool (true if candidate promoted or first retrain, false if champion kept)
+  - "champion_pr_auc": float | None (PR-AUC of serving model on holdout, None on first retrain)
+  - "candidate_pr_auc": float (PR-AUC of best candidate on holdout)
+  - "best_model": str ("XGBoost", "RandomForest", or "LogisticRegression")
+POST /api/sim/advance optional response fields (when retrained is true):
+  - "promoted": bool
+  - "champion_pr_auc": float | None
+  - "candidate_pr_auc": float | None
+  - "best_model": str | None
+Rules:
+- 3 candidates trained on settled claims: RandomForest, LogisticRegression, XGBoost.
+- Candidate with highest PR-AUC evaluated against currently serving champion on time-based holdout.
+- Promoted only if candidate_pr_auc > champion_pr_auc. First model (v1) is always promoted.
+- model_version increases ONLY on promotion.
+- state.retrains_total counts every retrain attempt.
+

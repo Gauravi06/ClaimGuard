@@ -30,6 +30,7 @@ class SimulationState:
 
     def reset(self, start_date: Optional[date] = None) -> None:
         """Reset state to initial values for test isolation."""
+        training.reset_model()
         self.start_date = start_date if start_date is not None else get_earliest_filed_at()
         self.simulated_date = self.start_date
         self.last_retrain_settled_count = 0
@@ -87,11 +88,12 @@ class SimulationState:
            - either no model exists yet (model_version == 0), OR
            - newly_settled >= MIN_SETTLED.
         5. When retraining:
+           - increment retrains_total
            - call train_and_log(as_of)
+           - update model_version (increases only on promotion)
            - store result in latest_metrics
            - set last_retrain_settled_count = settled_count
-           - increment model_version and retrains_total
-        6. Return {simulated_date, newly_settled, retrained, model_version}.
+        6. Return {simulated_date, newly_settled, retrained, model_version, promoted, ...}.
         """
         self.advance_date(days)
         as_of = self.simulated_date
@@ -105,22 +107,27 @@ class SimulationState:
         )
 
         if should_retrain:
-            metrics_dict = training.train_and_log(as_of)
-            self.model_version += 1
             self.retrains_total += 1
-            metrics_dict["model_version"] = self.model_version
+            metrics_dict = training.train_and_log(as_of)
+            self.model_version = metrics_dict["model_version"]
             self.latest_metrics = metrics_dict
             self.last_retrain_settled_count = settled_count
             retrained = True
         else:
             retrained = False
 
-        return {
+        res = {
             "simulated_date": self.simulated_date.isoformat(),
             "newly_settled": newly_settled,
             "retrained": retrained,
             "model_version": self.model_version,
         }
+        if retrained and self.latest_metrics:
+            res["promoted"] = self.latest_metrics.get("promoted", False)
+            res["champion_pr_auc"] = self.latest_metrics.get("champion_pr_auc")
+            res["candidate_pr_auc"] = self.latest_metrics.get("candidate_pr_auc")
+            res["best_model"] = self.latest_metrics.get("best_model")
+        return res
 
 # Global in-memory simulation state
 state = SimulationState()

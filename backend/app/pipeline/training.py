@@ -16,6 +16,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import precision_score, recall_score, f1_score, average_precision_score
 from sklearn.model_selection import train_test_split
 
+from app.pipeline import simulation
 from app.pipeline.simulation import get_settled, get_pending
 from app.pipeline.tracking import log_training_run
 
@@ -52,6 +53,15 @@ def _create_model_pipeline(classifier_type: str) -> Pipeline:
         clf = RandomForestClassifier(n_estimators=100, random_state=42)
     elif classifier_type == "lr":
         clf = LogisticRegression(max_iter=1000, random_state=42)
+    elif classifier_type == "xgb":
+        from xgboost import XGBClassifier
+        clf = XGBClassifier(
+            n_estimators=100,
+            max_depth=5,
+            learning_rate=0.1,
+            random_state=42,
+            eval_metric="logloss"
+        )
     else:
         raise ValueError(f"Unknown classifier_type: {classifier_type}")
 
@@ -89,20 +99,41 @@ def _split_settled_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, p
     return X, X, y, y
 
 
+def reset_model() -> None:
+    """Reset in-memory model and version for test isolation."""
+    global _current_model, _model_version
+    _current_model = None
+    _model_version = 0
+
+
+def get_model_version() -> int:
+    """Return the currently serving model version."""
+    return _model_version
+
+
+def get_current_model() -> Optional[Pipeline]:
+    """Return the currently serving model pipeline."""
+    return _current_model
+
+
 def train_and_log(as_of: date) -> Dict[str, Any]:
     """
-    Train Random Forest and Logistic Regression models on settled claims as of `as_of`.
-    Selects the better model based on PR-AUC, updates in-memory model, logs run to MLflow,
-    and returns metric summary.
+    Train RandomForest, LogisticRegression, and XGBoost on settled claims as of `as_of`.
+    Evaluates candidates on a time-based holdout test set and applies the promotion rule:
+    - Best candidate is selected based on PR-AUC on the holdout.
+    - If no model is currently serving (first retrain), candidate is always promoted to v1.
+    - If a model is currently serving, both candidate and champion are evaluated on that same holdout;
+      candidate is promoted only if its PR-AUC is strictly higher.
+    - If not promoted, the currently serving model is kept unchanged and model_version does not increment.
+    - model_version reflects the version of the currently serving model.
+    - Logs run to MLflow and returns result dict with promotion details.
     """
     global _current_model, _model_version
 
-    settled_df = get_settled(as_of)
-    pending_df = get_pending(as_of)
+    settled_df = simulation.get_settled(as_of)
+    pending_df = simulation.get_pending(as_of)
     n_pending = len(pending_df)
     n_train = len(settled_df)
-
-    _model_version += 1
 
     if n_train == 0 or "is_fraud" not in settled_df.columns or len(np.unique(settled_df["is_fraud"])) < 2:
         dummy_metrics = {
@@ -129,52 +160,82 @@ def train_and_log(as_of: date) -> Dict[str, Any]:
             "n_train": n_train,
             "n_pending": n_pending,
             "model_version": _model_version,
-            "metrics": dummy_metrics
+            "metrics": dummy_metrics,
+            "promoted": False,
+            "champion_pr_auc": None,
+            "candidate_pr_auc": 0.0,
+            "best_model": "None",
         }
 
     X_train, X_val, y_train, y_val = _split_settled_data(settled_df)
 
-    # Train and evaluate Random Forest
-    rf_pipe = _create_model_pipeline("rf")
-    rf_pipe.fit(X_train, y_train)
-    rf_val_probs = rf_pipe.predict_proba(X_val)[:, 1]
-    rf_pr_auc = float(average_precision_score(y_val, rf_val_probs)) if len(np.unique(y_val)) > 1 else 0.0
+    # Train and evaluate 3 candidates: RandomForest, LogisticRegression, XGBoost
+    candidates = {}
+    candidate_types = [("rf", "RandomForest"), ("lr", "LogisticRegression"), ("xgb", "XGBoost")]
+    for ctype, cname in candidate_types:
+        pipe = _create_model_pipeline(ctype)
+        pipe.fit(X_train, y_train)
+        probs = pipe.predict_proba(X_val)[:, 1]
+        score = float(average_precision_score(y_val, probs)) if len(np.unique(y_val)) > 1 else 0.0
+        candidates[cname] = (score, pipe, probs)
 
-    # Train and evaluate Logistic Regression
-    lr_pipe = _create_model_pipeline("lr")
-    lr_pipe.fit(X_train, y_train)
-    lr_val_probs = lr_pipe.predict_proba(X_val)[:, 1]
-    lr_pr_auc = float(average_precision_score(y_val, lr_val_probs)) if len(np.unique(y_val)) > 1 else 0.0
+    # Select best candidate by PR-AUC
+    best_model_name, (candidate_pr_auc, best_candidate_pipe, best_val_probs) = max(
+        candidates.items(), key=lambda item: item[1][0]
+    )
 
-    # Select better model by PR-AUC
-    if rf_pr_auc >= lr_pr_auc:
-        best_pipe = rf_pipe
-        best_val_probs = rf_val_probs
-        best_model_name = "RandomForest"
+    # Promotion check against currently serving model on the same holdout
+    if _current_model is None:
+        # First model is always promoted to version 1
+        promoted = True
+        champion_pr_auc = None
+        _model_version += 1
+        # Fit on all settled claims for serving
+        X_full = settled_df[FEATURES]
+        y_full = settled_df["is_fraud"].astype(int)
+        best_candidate_pipe.fit(X_full, y_full)
+        _current_model = best_candidate_pipe
+        serving_probs = best_val_probs
     else:
-        best_pipe = lr_pipe
-        best_val_probs = lr_val_probs
-        best_model_name = "LogisticRegression"
+        # Evaluate current serving champion on the same holdout
+        champ_probs = _current_model.predict_proba(X_val)[:, 1]
+        champion_pr_auc = float(average_precision_score(y_val, champ_probs)) if len(np.unique(y_val)) > 1 else 0.0
 
-    # Retrain best pipeline structure on ALL settled claims for production scoring
-    X_full = settled_df[FEATURES]
-    y_full = settled_df["is_fraud"].astype(int)
-    best_pipe.fit(X_full, y_full)
-    _current_model = best_pipe
+        if candidate_pr_auc > champion_pr_auc:
+            promoted = True
+            _model_version += 1
+            X_full = settled_df[FEATURES]
+            y_full = settled_df["is_fraud"].astype(int)
+            best_candidate_pipe.fit(X_full, y_full)
+            _current_model = best_candidate_pipe
+            serving_probs = best_val_probs
+        else:
+            promoted = False
+            # Keep serving current model, model_version does not increment
+            serving_probs = champ_probs
 
-    # Compute validation metrics for report
-    val_preds = (best_val_probs >= 0.5).astype(int)
+    # Compute validation metrics for the currently serving model on holdout
+    val_preds = (serving_probs >= 0.5).astype(int)
     precision = float(precision_score(y_val, val_preds, zero_division=0))
     recall = float(recall_score(y_val, val_preds, zero_division=0))
     f1 = float(f1_score(y_val, val_preds, zero_division=0))
-    pr_auc = float(average_precision_score(y_val, best_val_probs)) if len(np.unique(y_val)) > 1 else 0.0
+    pr_auc = float(average_precision_score(y_val, serving_probs)) if len(np.unique(y_val)) > 1 else 0.0
 
     metrics = {
         "precision": round(precision, 4),
         "recall": round(recall, 4),
         "f1": round(f1, 4),
-        "pr_auc": round(pr_auc, 4)
+        "pr_auc": round(pr_auc, 4),
     }
+
+    # Log to MLflow
+    mlflow_metrics = {
+        **metrics,
+        "candidate_pr_auc": round(float(candidate_pr_auc), 4),
+        "promoted": 1.0 if promoted else 0.0,
+    }
+    if champion_pr_auc is not None:
+        mlflow_metrics["champion_pr_auc"] = round(float(champion_pr_auc), 4)
 
     try:
         run_id = log_training_run(
@@ -182,7 +243,7 @@ def train_and_log(as_of: date) -> Dict[str, Any]:
             n_train=n_train,
             n_pending=n_pending,
             model_version=_model_version,
-            metrics=metrics,
+            metrics=mlflow_metrics,
             best_model_name=best_model_name,
         )
     except Exception:
@@ -194,7 +255,11 @@ def train_and_log(as_of: date) -> Dict[str, Any]:
         "n_train": n_train,
         "n_pending": n_pending,
         "model_version": _model_version,
-        "metrics": metrics
+        "metrics": metrics,
+        "promoted": promoted,
+        "champion_pr_auc": round(champion_pr_auc, 4) if champion_pr_auc is not None else None,
+        "candidate_pr_auc": round(float(candidate_pr_auc), 4),
+        "best_model": best_model_name,
     }
 
 
