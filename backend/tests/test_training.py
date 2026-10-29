@@ -34,7 +34,7 @@ def test_train_and_log_real_date_structure():
     assert isinstance(res, dict)
     expected_top_keys = {
         "run_id", "as_of", "n_train", "n_pending", "model_version",
-        "metrics", "promoted", "champion_pr_auc", "candidate_pr_auc", "best_model"
+        "metrics", "promoted", "champion_pr_auc", "candidate_pr_auc", "best_model", "retrained"
     }
     assert set(res.keys()) == expected_top_keys
 
@@ -104,18 +104,18 @@ def test_candidate_worse_is_not_promoted_and_version_stays():
     assert res1["promoted"] is True
     assert res1["model_version"] == 1
 
-    # Train again with identical date/data (or at 2015-02-05 where candidate does not strictly beat champion)
-    res2 = train_and_log(date(2015, 2, 5))
-    if not res2["promoted"]:
-        assert res2["promoted"] is False
-        assert res2["model_version"] == res1["model_version"]
-        assert get_model_version() == res1["model_version"]
-    else:
-        # If 2015-02-05 was promoted, train with same date again (candidate cannot beat itself)
-        res3 = train_and_log(date(2015, 2, 5))
-        assert res3["promoted"] is False
-        assert res3["model_version"] == res2["model_version"]
-        assert get_model_version() == res2["model_version"]
+    # Second retrain promotes v2 at 2015-01-29 (PR-AUC 0.6451 > 0.2095)
+    res2 = train_and_log(date(2015, 1, 29))
+    assert res2["promoted"] is True
+    assert res2["model_version"] == 2
+
+    # Third retrain at 2015-02-05: candidate (0.5518) fails to beat champion (0.6164)
+    res3 = train_and_log(date(2015, 2, 5))
+    assert res3["promoted"] is False
+    assert res3["champion_pr_auc"] is not None
+    assert res3["candidate_pr_auc"] < res3["champion_pr_auc"]
+    assert res3["model_version"] == 2
+    assert get_model_version() == 2
 
 
 def test_better_candidate_is_promoted_and_version_increases():

@@ -62,3 +62,21 @@ Rules:
 - model_version increases ONLY on promotion.
 - state.retrains_total counts every retrain attempt.
 
+## S6. Edge Cases and Idempotency (R2)
+1. No new settled claims (`newly_settled <= 0`):
+   - Clock advances normally, but retraining is skipped.
+   - Response returns `retrained: false`, `newly_settled: int <= 0`, preserving `model_version`.
+2. Single-class settled data:
+   - Does not crash. Skips training, logs run, returns `retrained: false` with `"reason"`.
+   - Previous serving model and `model_version` remain unchanged.
+3. Training exception:
+   - Caught gracefully in pipeline and routes.
+   - Logs failure, preserves previous model and `model_version`.
+   - Returns HTTP 200 with `retrained: false` and `"error": str(exc)`.
+4. Idempotency:
+   - Calling `train_and_log(as_of)` multiple times with identical `as_of` and settled count returns identical metrics and result without re-training or bumping `model_version` / `retrains_total` twice.
+5. Empty pending set at dataset end:
+   - When all simulation claims have settled, `GET /api/sim/pending` returns `{"as_of": "...", "count": 0, "claims": []}`.
+6. Clock past last filed date:
+   - Advancing past dataset end operates smoothly without errors.
+

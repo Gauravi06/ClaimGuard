@@ -33,6 +33,8 @@ NUMERICAL_FEATURES = [c for c in FEATURES if c not in CATEGORICAL_FEATURES]
 # In-memory storage for current model state
 _current_model: Optional[Pipeline] = None
 _model_version: int = 0
+_last_training_fingerprint: Optional[str] = None
+_last_training_result: Optional[Dict[str, Any]] = None
 
 
 def _build_preprocessing_pipeline() -> ColumnTransformer:
@@ -101,9 +103,11 @@ def _split_settled_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, p
 
 def reset_model() -> None:
     """Reset in-memory model and version for test isolation."""
-    global _current_model, _model_version
+    global _current_model, _model_version, _last_training_fingerprint, _last_training_result
     _current_model = None
     _model_version = 0
+    _last_training_fingerprint = None
+    _last_training_result = None
 
 
 def get_model_version() -> int:
@@ -126,16 +130,25 @@ def train_and_log(as_of: date) -> Dict[str, Any]:
       candidate is promoted only if its PR-AUC is strictly higher.
     - If not promoted, the currently serving model is kept unchanged and model_version does not increment.
     - model_version reflects the version of the currently serving model.
-    - Logs run to MLflow and returns result dict with promotion details.
+    - Idempotency: calling twice with same as_of and settled count produces same metrics and does not bump version.
+    - Safe error handling: single-class data or exceptions do not crash and preserve model state.
     """
-    global _current_model, _model_version
+    global _current_model, _model_version, _last_training_fingerprint, _last_training_result
 
     settled_df = simulation.get_settled(as_of)
     pending_df = simulation.get_pending(as_of)
     n_pending = len(pending_df)
     n_train = len(settled_df)
 
-    if n_train == 0 or "is_fraud" not in settled_df.columns or len(np.unique(settled_df["is_fraud"])) < 2:
+    # Idempotency guard: return identical metrics if called with identical as_of and settled count
+    fingerprint = f"{as_of.isoformat()}_{n_train}"
+    if fingerprint == _last_training_fingerprint and _last_training_result is not None:
+        return dict(_last_training_result)
+
+    # Single-class data or empty data guard
+    unique_classes = np.unique(settled_df["is_fraud"]) if ("is_fraud" in settled_df.columns and not settled_df.empty) else []
+    if n_train == 0 or len(unique_classes) < 2:
+        reason = "No settled claims to train on" if n_train == 0 else "Settled data contains only one class"
         dummy_metrics = {
             "precision": 0.0,
             "recall": 0.0,
@@ -152,9 +165,9 @@ def train_and_log(as_of: date) -> Dict[str, Any]:
                 best_model_name="None",
             )
         except Exception:
-            run_id = f"run_{uuid.uuid4().hex[:8]}"
+            run_id = f"skip_{uuid.uuid4().hex[:8]}"
 
-        return {
+        result = {
             "run_id": run_id,
             "as_of": as_of.isoformat(),
             "n_train": n_train,
@@ -165,102 +178,135 @@ def train_and_log(as_of: date) -> Dict[str, Any]:
             "champion_pr_auc": None,
             "candidate_pr_auc": 0.0,
             "best_model": "None",
+            "retrained": False,
+            "reason": reason,
         }
+        _last_training_fingerprint = fingerprint
+        _last_training_result = result
+        return result
 
-    X_train, X_val, y_train, y_val = _split_settled_data(settled_df)
+    try:
+        X_train, X_val, y_train, y_val = _split_settled_data(settled_df)
 
-    # Train and evaluate 3 candidates: RandomForest, LogisticRegression, XGBoost
-    candidates = {}
-    candidate_types = [("rf", "RandomForest"), ("lr", "LogisticRegression"), ("xgb", "XGBoost")]
-    for ctype, cname in candidate_types:
-        pipe = _create_model_pipeline(ctype)
-        pipe.fit(X_train, y_train)
-        probs = pipe.predict_proba(X_val)[:, 1]
-        score = float(average_precision_score(y_val, probs)) if len(np.unique(y_val)) > 1 else 0.0
-        candidates[cname] = (score, pipe, probs)
+        # Train and evaluate 3 candidates: RandomForest, LogisticRegression, XGBoost
+        candidates = {}
+        candidate_types = [("rf", "RandomForest"), ("lr", "LogisticRegression"), ("xgb", "XGBoost")]
+        for ctype, cname in candidate_types:
+            pipe = _create_model_pipeline(ctype)
+            pipe.fit(X_train, y_train)
+            probs = pipe.predict_proba(X_val)[:, 1]
+            score = float(average_precision_score(y_val, probs)) if len(np.unique(y_val)) > 1 else 0.0
+            candidates[cname] = (score, pipe, probs)
 
-    # Select best candidate by PR-AUC
-    best_model_name, (candidate_pr_auc, best_candidate_pipe, best_val_probs) = max(
-        candidates.items(), key=lambda item: item[1][0]
-    )
+        # Select best candidate by PR-AUC
+        best_model_name, (candidate_pr_auc, best_candidate_pipe, best_val_probs) = max(
+            candidates.items(), key=lambda item: item[1][0]
+        )
 
-    # Promotion check against currently serving model on the same holdout
-    if _current_model is None:
-        # First model is always promoted to version 1
-        promoted = True
-        champion_pr_auc = None
-        _model_version += 1
-        # Fit on all settled claims for serving
-        X_full = settled_df[FEATURES]
-        y_full = settled_df["is_fraud"].astype(int)
-        best_candidate_pipe.fit(X_full, y_full)
-        _current_model = best_candidate_pipe
-        serving_probs = best_val_probs
-    else:
-        # Evaluate current serving champion on the same holdout
-        champ_probs = _current_model.predict_proba(X_val)[:, 1]
-        champion_pr_auc = float(average_precision_score(y_val, champ_probs)) if len(np.unique(y_val)) > 1 else 0.0
-
-        if candidate_pr_auc > champion_pr_auc:
+        # Promotion check against currently serving model on the same holdout
+        if _current_model is None:
+            # First model is always promoted to version 1
             promoted = True
+            champion_pr_auc = None
             _model_version += 1
+            # Fit on all settled claims for serving
             X_full = settled_df[FEATURES]
             y_full = settled_df["is_fraud"].astype(int)
             best_candidate_pipe.fit(X_full, y_full)
             _current_model = best_candidate_pipe
             serving_probs = best_val_probs
         else:
-            promoted = False
-            # Keep serving current model, model_version does not increment
-            serving_probs = champ_probs
+            # Evaluate current serving champion on the same holdout
+            champ_probs = _current_model.predict_proba(X_val)[:, 1]
+            champion_pr_auc = float(average_precision_score(y_val, champ_probs)) if len(np.unique(y_val)) > 1 else 0.0
 
-    # Compute validation metrics for the currently serving model on holdout
-    val_preds = (serving_probs >= 0.5).astype(int)
-    precision = float(precision_score(y_val, val_preds, zero_division=0))
-    recall = float(recall_score(y_val, val_preds, zero_division=0))
-    f1 = float(f1_score(y_val, val_preds, zero_division=0))
-    pr_auc = float(average_precision_score(y_val, serving_probs)) if len(np.unique(y_val)) > 1 else 0.0
+            if candidate_pr_auc > champion_pr_auc:
+                promoted = True
+                _model_version += 1
+                X_full = settled_df[FEATURES]
+                y_full = settled_df["is_fraud"].astype(int)
+                best_candidate_pipe.fit(X_full, y_full)
+                _current_model = best_candidate_pipe
+                serving_probs = best_val_probs
+            else:
+                promoted = False
+                # Keep serving current model, model_version does not increment
+                serving_probs = champ_probs
 
-    metrics = {
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        "f1": round(f1, 4),
-        "pr_auc": round(pr_auc, 4),
-    }
+        # Compute validation metrics for the currently serving model on holdout
+        val_preds = (serving_probs >= 0.5).astype(int)
+        precision = float(precision_score(y_val, val_preds, zero_division=0))
+        recall = float(recall_score(y_val, val_preds, zero_division=0))
+        f1 = float(f1_score(y_val, val_preds, zero_division=0))
+        pr_auc = float(average_precision_score(y_val, serving_probs)) if len(np.unique(y_val)) > 1 else 0.0
 
-    # Log to MLflow
-    mlflow_metrics = {
-        **metrics,
-        "candidate_pr_auc": round(float(candidate_pr_auc), 4),
-        "promoted": 1.0 if promoted else 0.0,
-    }
-    if champion_pr_auc is not None:
-        mlflow_metrics["champion_pr_auc"] = round(float(champion_pr_auc), 4)
+        metrics = {
+            "precision": round(precision, 4),
+            "recall": round(recall, 4),
+            "f1": round(f1, 4),
+            "pr_auc": round(pr_auc, 4),
+        }
 
-    try:
-        run_id = log_training_run(
-            as_of=as_of.isoformat(),
-            n_train=n_train,
-            n_pending=n_pending,
-            model_version=_model_version,
-            metrics=mlflow_metrics,
-            best_model_name=best_model_name,
-        )
-    except Exception:
-        run_id = f"run_{uuid.uuid4().hex[:8]}"
+        # Log to MLflow
+        mlflow_metrics = {
+            **metrics,
+            "candidate_pr_auc": round(float(candidate_pr_auc), 4),
+            "promoted": 1.0 if promoted else 0.0,
+        }
+        if champion_pr_auc is not None:
+            mlflow_metrics["champion_pr_auc"] = round(float(champion_pr_auc), 4)
 
-    return {
-        "run_id": run_id,
-        "as_of": as_of.isoformat(),
-        "n_train": n_train,
-        "n_pending": n_pending,
-        "model_version": _model_version,
-        "metrics": metrics,
-        "promoted": promoted,
-        "champion_pr_auc": round(champion_pr_auc, 4) if champion_pr_auc is not None else None,
-        "candidate_pr_auc": round(float(candidate_pr_auc), 4),
-        "best_model": best_model_name,
-    }
+        try:
+            run_id = log_training_run(
+                as_of=as_of.isoformat(),
+                n_train=n_train,
+                n_pending=n_pending,
+                model_version=_model_version,
+                metrics=mlflow_metrics,
+                best_model_name=best_model_name,
+            )
+        except Exception:
+            run_id = f"run_{uuid.uuid4().hex[:8]}"
+
+        result = {
+            "run_id": run_id,
+            "as_of": as_of.isoformat(),
+            "n_train": n_train,
+            "n_pending": n_pending,
+            "model_version": _model_version,
+            "metrics": metrics,
+            "promoted": promoted,
+            "champion_pr_auc": round(champion_pr_auc, 4) if champion_pr_auc is not None else None,
+            "candidate_pr_auc": round(float(candidate_pr_auc), 4),
+            "best_model": best_model_name,
+            "retrained": True,
+        }
+        _last_training_fingerprint = fingerprint
+        _last_training_result = result
+        return result
+
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Training exception in train_and_log for as_of %s", as_of)
+        return {
+            "run_id": f"err_{uuid.uuid4().hex[:8]}",
+            "as_of": as_of.isoformat(),
+            "n_train": n_train,
+            "n_pending": n_pending,
+            "model_version": _model_version,
+            "metrics": {
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "pr_auc": 0.0,
+            },
+            "promoted": False,
+            "champion_pr_auc": None,
+            "candidate_pr_auc": 0.0,
+            "best_model": "None",
+            "retrained": False,
+            "error": str(exc),
+        }
 
 
 def score_claims(df: pd.DataFrame) -> list[float]:
