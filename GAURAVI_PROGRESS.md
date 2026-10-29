@@ -54,8 +54,8 @@ This document serves as the live progress documentation for Gauravi's track (ML 
 |------|-------------|--------|--------|-------|
 | **Setup** | Repo check, branch audit, dataset verification, branch `gauravi/shap-results` | **DONE** | - | Clean state verified |
 | **G1** | SHAP in scoring explanation (`TreeExplainer`, top-5, lazy import fallback, requirements, tests) | **DONE** | `feat(ml): SHAP explanations` | Fully tested (45 + 73 passed) |
-| **G2** | SHAP bars on Claim Detail UI (`ClaimDetail.jsx`, horizontal signed bars) | Pending | `feat(frontend): SHAP bars on claim detail` | Next prompt |
-| **G3** | Settlement-aware vs naive experiment (`experiments/settlement_comparison.py`, charts) | Pending | `feat(experiments): settlement-aware vs naive comparison` | Next |
+| **G2** | SHAP bars on Claim Detail UI (`ClaimDetail.jsx`, horizontal signed bars) | **DONE** | `feat(frontend): SHAP bars on claim detail` | Build & tests verified |
+| **G3** | Settlement-aware vs naive experiment (`experiments/settlement_comparison.py`, charts) | Pending | `feat(experiments): settlement-aware vs naive comparison` | Next prompt |
 | **G4** | Results document (`docs/RESULTS.md` with empirical data & figures) | Pending | `docs: results write-up` | Next |
 
 ---
@@ -84,3 +84,19 @@ This document serves as the live progress documentation for Gauravi's track (ML 
    - Root-caused `test_existing_claims_endpoints_still_work` SQLite issue: `TestClient(app)` in `test_sim_routes.py` doesn't enter FastAPI's lifespan context manager, so `init_db()` is not called automatically during that test if `test.db` is an uninitialized 0 KB file. Running `init_db()` sets up the tables cleanly without modifying teammates' test files.
 6. **Dependency Sync**:
    - Appended `shap` to both `requirements.txt` and `backend/requirements.txt`.
+
+### Task G2: SHAP Bars on Claim Detail UI
+1. **Bipolar Signed Horizontal Bars in `ClaimDetail.jsx`**:
+   - Implemented a two-sided horizontal bar container with a central zero divider line.
+   - Negative SHAP contributions (decreases risk) render as green bars (`bg-emerald-500`) extending leftwards from the center.
+   - Positive SHAP contributions (increases risk) render as red bars (`bg-rose-500`) extending rightwards from the center.
+   - Displays feature name (human-formatted), claim value, signed `shap_value` badge (e.g. `+0.8568` or `-0.0901`), and base model importance.
+2. **Backward Compatibility & Fallback**:
+   - `hasShap` detection checks if any explanation items carry a valid `shap_value`.
+   - For legacy or pre-existing claims lacking `shap_value`, cleanly falls back to the original vertical feature importance bars.
+3. **API Model Preservation**:
+   - Added `shap_value: Optional[float] = None` to `Explanation` in `backend/app/models.py` (with user confirmation) to allow Pydantic to retain `shap_value` in responses from `POST /api/claims`, `GET /api/claims`, and `GET /api/claims/{claim_id}`.
+4. **Build & Test Validation**:
+   - `npm run build` in `frontend/` succeeded with 0 errors (`✓ built in 8.48s`).
+   - `pytest backend/tests` passed 45/45.
+   - `pytest tests` passed 73/73.

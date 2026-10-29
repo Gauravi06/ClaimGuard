@@ -116,3 +116,5 @@ def test_post_claims_returns_200_with_explanation():
     assert "feature" in first_exp
     assert "importance" in first_exp
     assert "direction" in first_exp
+    assert "shap_value" in first_exp
+    assert isinstance(first_exp["shap_value"], float)
