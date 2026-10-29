@@ -1,3 +1,5 @@
+![CI](https://github.com/Gauravi06/ClaimGuard/actions/workflows/ci.yml/badge.svg?branch=main)
+
 # ClaimGuard — Insurance Fraud Detection System
 
 > A full-stack MVP for early insurance fraud detection that flags suspicious claims immediately upon submission despite ground-truth fraud labels arriving weeks or months later.
