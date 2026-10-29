@@ -110,6 +110,15 @@ class SimulationState:
             and (self.model_version == 0 or newly_settled >= MIN_SETTLED)
         )
 
+        # DRIFT_TRIGGERS_RETRAIN: advisory drift check can trigger retrain when true and status is 'alert' (R3)
+        import os
+        drift_triggers_retrain = os.getenv("DRIFT_TRIGGERS_RETRAIN", "false").lower() in ("true", "1", "yes")
+        if not should_retrain and drift_triggers_retrain and settled_count >= MIN_SETTLED and newly_settled > 0 and self.model_version > 0:
+            from .drift import compute_drift
+            drift_res = compute_drift(as_of)
+            if drift_res.get("status") == "alert":
+                should_retrain = True
+
         retrained = False
         reason: Optional[str] = None
         error: Optional[str] = None

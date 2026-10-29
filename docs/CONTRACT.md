@@ -80,3 +80,16 @@ Rules:
 6. Clock past last filed date:
    - Advancing past dataset end operates smoothly without errors.
 
+## S7. Feature Drift Check (PSI) (R3)
+`GET /api/sim/drift` -> `{"as_of": str, "status": str, "max_psi": float | null, "features": [{"name": str, "psi": float}]}`
+- Function: `compute_drift(as_of: date) -> dict` in `backend/app/pipeline/drift.py`.
+- Features: Evaluates only the 13 contract features between claims used at the last retrain and recent claims filed in the 14 days before `as_of`. Never uses or exposes label columns.
+- Status rules:
+  - `"no model yet"`: returned before the first model retrain (model_version == 0), with `max_psi: null` and `features: []`.
+  - `"ok"`: `max_psi < 0.10`
+  - `"warn"`: `0.10 <= max_psi <= 0.25`
+  - `"alert"`: `max_psi > 0.25`
+- Advisory flag:
+  - Default: Advisory only (`DRIFT_TRIGGERS_RETRAIN=false`). Does not alter retrain behavior.
+  - When `DRIFT_TRIGGERS_RETRAIN=true` and `status == "alert"`, clock advance triggers a model retrain when new settled claims exist.
+
