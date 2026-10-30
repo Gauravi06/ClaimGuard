@@ -56,7 +56,7 @@ This document serves as the live progress documentation for Gauravi's track (ML 
 | **G1** | SHAP in scoring explanation (`TreeExplainer`, top-5, lazy import fallback, requirements, tests) | **DONE** | `feat(ml): SHAP explanations` | Fully tested (45 + 73 passed) |
 | **G2** | SHAP bars on Claim Detail UI (`ClaimDetail.jsx`, horizontal signed bars) | **DONE** | `feat(frontend): SHAP bars on claim detail` | Build & tests verified |
 | **G3** | Settlement-aware vs naive experiment (`experiments/settlement_comparison.py`, charts) | **DONE** | `feat(experiments): settlement-aware vs naive comparison` | 10 dates evaluated, charts in `docs/figures/` |
-| **G4** | Results document (`docs/RESULTS.md` with empirical data & figures) | Pending | `docs: results write-up` | Next prompt |
+| **G4** | Results document (`docs/RESULTS.md` with empirical data & figures) | **DONE** | `docs: results write-up` | Complete report, 5 sections |
 
 ---
 
@@ -120,3 +120,14 @@ This document serves as the live progress documentation for Gauravi's track (ML 
    - High-resolution figures saved to [`docs/figures/settlement_pr_auc_over_time.png`](file:///E:/Projects/ClaimGuard-git/docs/figures/settlement_pr_auc_over_time.png) and [`docs/figures/settlement_recall_over_time.png`](file:///E:/Projects/ClaimGuard-git/docs/figures/settlement_recall_over_time.png).
 5. **Automated Testing**:
    - Added [`tests/test_settlement_comparison.py`](file:///E:/Projects/ClaimGuard-git/tests/test_settlement_comparison.py) testing holdout temporal isolation and execution on a 100-row sample. Both tests pass.
+
+### Task G4: Results Document (`docs/RESULTS.md`)
+1. **Empirical Precision (No Invented Numbers)**:
+   - Authored [`docs/RESULTS.md`](file:///E:/Projects/ClaimGuard-git/docs/RESULTS.md) using exclusively real computed statistics and serialized files.
+   - **Section 1 (Datasets)**: Raw `carclaims.csv` (15,420 rows, 33 attributes, 5.99% fraud rate), processed `carclaims_processed.csv` (15,419 rows, 14 features, 5.99% fraud rate), and simulation `claims_sim.csv` (1,000 rows, 24.7% fraud rate, 10–30 day delay with mean 19.63 days, seed 42, 13 contract features).
+   - **Section 2 (Model Comparison)**: Benchmark table from `data/processed/model_comparison.csv` (XGBoost champion PR-AUC 0.1872 vs. Random Forest 0.1769 vs. Logistic Regression 0.1281), detailed justification for PR-AUC/Precision/Recall given class imbalance, and comparison against random baseline (0.0599).
+   - **Section 3 (Settlement-Aware vs. Naive)**: Embedded generated figures (`docs/figures/settlement_pr_auc_over_time.png` and `docs/figures/settlement_recall_over_time.png`), full 10-timestep data table, and analysis of the naive model's initial recall collapse.
+   - **Section 4 (Simulation Results)**: Live sequence from day 0 to step 3 (first model at 2015-01-22 with 61 settled claims, v1, PR-AUC ~0.38), with steps 4–8 designated as `TODO: replace with Rashi's dry-run table` as planned.
+   - **Section 5 (Limitations)**: Documented architectural decoupling, synthetic uniform delays, 1k simulation scale, advisory drift detection, and demonstration auth status.
+2. **Track Completion Status**:
+   - Tasks **G1, G2, G3, G4** are all fully implemented, verified, and committed. All 120 tests pass.
