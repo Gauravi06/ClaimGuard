@@ -3,197 +3,108 @@
 ## Completed
 
 - **FastAPI Backend Core**: RESTful API built with FastAPI, Pydantic v2 schemas, and CORS middleware.
-
-- **Persistent Claim Store (Neon PostgreSQL)**: Single `claims` table via SQLAlchemy 2 (sync) + psycopg 3, configured by `DATABASE_URL`. The store keeps the original API (`add/get/get_all/update_label`) plus `add_many/get_labeled/count/clear`. Fraud score, prediction, risk level, and explanations are stored at creation and never re-scored; `true_label` is `NULL` until a delayed label arrives. Table is created with `create_all` at startup.
-
-- **Scikit-Learn ML Pipeline**: `RandomForestClassifier` baseline trained on synthetic insurance claim features at server startup.
-
-- **Real-time Explainable Risk Scoring**: Claim ingestion endpoint predicts fraud probabilities (0–100%), assigns risk levels (`low`, `medium`, `high`), and returns feature importance explanations.
-
-- **Delayed-Label Workflow**: Endpoint (`PATCH /api/claims/{id}/label`) allowing delayed ground-truth labels (`true_label: bool`) to be applied after investigation.
-
-- **Model Performance Analytics**: Live evaluation endpoint (`GET /api/analytics/model-performance`), querying only claims with `true_label IS NOT NULL`, computing Accuracy, Precision, Recall, F1 Score, ROC-AUC, and Confusion Matrix.
-
-- **Edge-case Protection**: Safe handling of zero-labeled claims and single-class distributions so undefined metrics (such as ROC-AUC with only one class) return `null` without throwing HTTP 500 errors.
-
-- **Delayed Label Simulator**: Endpoint (`POST /api/simulate/delayed-labels`) allowing bulk generation of historical claims with simulated investigation labels.
-
-- **Development Seed Feature**: CLI tool (`python -m backend.seed`) and endpoint (`POST /api/dev/seed`) to populate 20 realistic claims (7 fraud, 7 legitimate, 6 unlabeled).
-
-- **React 18 + Tailwind CSS 4 Frontend**: Professional insurance-tech dashboard featuring Sidebar Navigation, Overview Dashboard, Claim Submission Form with circular risk gauge, Claims Table, Claim Details view with feature risk bars, Model Performance dashboard, and Delayed Label Simulator interface.
+- **Persistent Claim Store (PostgreSQL & SQLite)**: Dual-database persistence via SQLAlchemy 2 (sync) + psycopg 3, configured by `DATABASE_URL`. Includes connection pooling (`pool_pre_ping`, `pool_recycle=300`), schema reflection, and backfill migration. Stored predictions, fraud scores, risk levels, and explanations are immutable once written; `true_label` is `NULL` until delayed investigation outcomes arrive.
+- **Real-World Automobile Claims Dataset**: Processed 15,420 automobile insurance claims with 14 engineered features (`data/processed/carclaims_processed.csv`), including fault, deductible, driver rating, age, accident area, address change, and supplements.
+- **Champion Model Benchmark & Serialization**: Offline comparative benchmark (`backend/app/ml/train_comparison.py`) evaluating Logistic Regression, Random Forest, and XGBoost with imbalanced classification metrics (PR-AUC, ROC-AUC, F1). XGBoost champion candidate serialized to `data/models/xgb_champion.joblib`.
+- **Fast Production Inference Serving**: `MLPipeline` (`backend/app/ml/pipeline.py`) loads serialized XGBoost model artifact in <10ms during startup without expensive re-training latency.
+- **Directional Feature Importance Explanations**: Tree Gain/Gini split-based directional attribution (`↑ Risk` or `↓ Risk`) identifying top risk drivers per claim.
+- **Delayed-Label Workflow**: Endpoints `PATCH /api/claims/{id}/label` and `POST /api/claims/{id}/settle` allowing delayed ground-truth labels (`true_label: bool`) to be applied without altering initial predictions.
+- **Dynamic Model Evaluation**: Endpoint `GET /api/analytics/model-performance` computing Accuracy, Precision, Recall, F1 Score, ROC-AUC, and 2×2 Confusion Matrix dynamically using only claims that have received ground-truth labels.
+- **Chronological Delayed-Label Simulation Engine**:
+  - Discrete event clock (`app/pipeline/state.py`, `/api/sim/clock`, `/api/sim/advance`) starting at `2015-01-01` and advancing by configurable intervals (default 7 days).
+  - Historical chronological dataset (`backend/data/claims_sim.csv`) with 1,000 synthetic automobile insurance claims.
+  - Strict Pending vs. Settled contract: `/api/sim/pending` never exposes `is_fraud`, `investigation_days`, or `label_available_at`.
+  - Periodic automated retraining: Triggers automatically when $\ge 25$ newly settled claims accumulate since the previous retrain, comparing Random Forest and Logistic Regression using PR-AUC and fitting the winner on all settled claims.
+- **MLflow Experiment Tracking**: `app/pipeline/tracking.py` logs all retrain runs, parameters (`as_of`, `n_train`, `n_pending`, `model_version`), and metrics (`precision`, `recall`, `f1`, `pr_auc`) to local `mlruns/` file store.
+- **Prometheus Metrics Exporter**: Standalone endpoint `GET /metrics` exporting official Prometheus exposition format gauges (`claimguard_model_version`, `claimguard_settled_claims`, `claimguard_pending_backlog`, `claimguard_newly_settled_since_retrain`, `claimguard_last_retrain_pr_auc`, `claimguard_simulated_date_epoch`) and counter (`claimguard_retrains_total`).
+- **React 18 + Tailwind CSS 4 Frontend**: Full single-page application with Overview Dashboard, Claim Submission Form with circular risk gauge, Claims Table & Detail views, Model Performance dashboard, and dedicated Simulation Dashboard (`SimulationDashboard.jsx`).
+- **Containerization**: Production `backend/Dockerfile` featuring an automated offline champion model training step during build, non-root execution considerations, and health check querying `/`.
+- **GitHub Actions CI Workflow**: `.github/workflows/ci.yml` running on push and pull request to `main`, validating backend tests (with XGBoost champion generation and SQLite database initialization) and frontend production build.
 
 ## Tested
 
-- **Unit Tests**: Full test suite covering:
-  - 0 claims (empty state)
-  - 1 labeled claim / single-class edge cases (ROC-AUC `null` handling)
-  - Multi-class dataset evaluation (Accuracy, Precision, Recall, F1, ROC-AUC calculations)
-  - Development seed generation and risk score assignment
-
-- **Persistence Tests** (`tests/test_persistence.py`, SQLite): Verified unlabeled-on-create behavior, identical read-back, stored prediction read-back without re-scoring, label persistence, exclusion of unlabeled claims from metrics, labeled-only queries, simulator persistence, and seed wipe behavior.
-
-- **Restart Persistence (SQLite, real uvicorn restarts)**: Claims, scores, predictions, explanations, and delayed labels verified identical across application restarts.
-
-- **Neon PostgreSQL Smoke Test**: `python backend/neon_smoke_test.py` successfully verified the real Neon PostgreSQL connection and persistence behavior. **13/13 checks passed**, including database connectivity, table creation, claim creation and retrieval, unlabeled claims being excluded from metrics, persistence across restarts, preservation of original prediction fields after delayed labeling, delayed-label persistence, Model Performance updates after labels arrive, PostgreSQL column types, and smoke-test cleanup.
-
-- **Frontend Build**: Verified production build (`npm run build`) via Vite compiler. Build completed successfully; the existing bundle-size warning remains a future optimization item.
-
-- **CLI Seed Tool**: Tested `python -m backend.seed` against the database-backed store, including seed generation and destructive replacement behavior.
+- **Simulation & Pipeline Unit Tests** (`backend/tests/`):
+  - `test_pipeline.py`: Validates `get_settled` and `get_pending` date filters and contract compliance (omitting label columns for pending claims).
+  - `test_prometheus_metrics.py`: Validates `/metrics` Prometheus format, gauges, counters, and values sourced from simulation state.
+  - `test_simulation.py`: Validates state initialization, clock advances, and investigation window bounds.
+  - `test_sim_routes.py`: Validates `/api/sim/clock`, `/api/sim/advance`, `/api/sim/pending`, `/api/sim/settled`, `/api/sim/metrics`, and backward compatibility with `/api/claims`.
+  - `test_state.py`: Validates state transition mechanics, retrain counters, and state resets.
+  - `test_tracking.py`: Validates MLflow tracking initialization and run parameter logging.
+  - `test_training.py`: Validates pipeline training, model comparison by PR-AUC, and scoring fallback behaviors.
+  - *Result: 45 passed in `backend/tests`.*
+- **Production Integration & Persistence Tests** (`tests/`):
+  - `test_analytics.py`: Unit tests for analytics edge cases (0 claims, single-class labels, metric sanitization).
+  - `test_demo_lifecycle.py`: Lifecycle verification across claim submission, delayed labeling, and performance computation.
+  - `test_model_comparison.py`: Benchmark data loader, split integrity, metric calculations, and champion artifact validation.
+  - `test_persistence.py`: Validates SQLite claim persistence, immutable initial predictions, delayed label persistence, and labeled-only metric queries.
+  - `test_production_integration.py`: End-to-end integration tests for 14-feature XGBoost model loading, feature extraction, inference, explanations, and API responses.
+  - `test_real_data_loader.py`: Verifies `carclaims_processed.csv` feature columns, data types, missing value absence, and class balance.
+  - `test_seed.py`: Verifies seed data generation and cleanup.
+  - *Result: 68 passed in `tests`.*
+- **Frontend Production Build**: Verified Vite production bundle compilation (`npm run build`) in `frontend/`. 2,355 modules transformed into production assets in `frontend/dist/`.
+- **Total Automated Tests**: **113 passed**.
 
 ## Current Architecture
 
-React (Vite + Tailwind v4)
+```
+React (Vite + Tailwind CSS v4)
         │
-        │ REST API
+        │ REST API (JSON)
         ▼
 FastAPI Backend
-   ┌────┼────────────┐
-   │    │            │
-   ▼    ▼            ▼
- Claims Analytics  ML Pipeline
-   │                  │
-   │                  ▼
-   │            RandomForest
-   │            Risk Scoring
-   │            Explanations
-   │
-   ▼
-Neon PostgreSQL
-   │
-   └── claims table
-
-### 1. Frontend
-
-SPA built with React 18, React Router v6, Tailwind CSS v4, Recharts, and Lucide Icons.
-
-Uses the Vite development proxy:
-
-`/api` → `http://localhost:8000`
-
-The frontend currently provides:
-- Overview Dashboard
-- Claim Submission
-- Claims Table
-- Claim Details
-- Risk Score / Risk Level
-- Feature Explanations
-- Model Performance
-- Delayed Label Simulator
-
-### 2. Backend
-
-Python 3.12 FastAPI service structured with:
-- `routes/claims.py` — claim submission, retrieval, labeling, simulation
-- `routes/analytics.py` — model performance metrics
-- `routes/seed.py` — development seed functionality
-- `database.py` — database-backed claim store
-- `orm.py` — SQLAlchemy `claims` table definition
-- `models.py` — Pydantic schemas
-- `ml/` — ML dataset generation and RandomForest pipeline
-- `main.py` — FastAPI application entry point and lifespan
-
-### 3. Database
-
-Claim persistence uses:
-- Neon PostgreSQL
-- SQLAlchemy 2
-- psycopg 3
-- `DATABASE_URL` environment variable
-
-The application stores the prediction generated at claim creation rather than recalculating it when the claim is later retrieved.
-
-A claim can therefore move through:
-
-Submitted
-    ↓
-Prediction stored
-    ↓
-true_label = NULL
-    ↓
-Pending investigation
-    ↓
-Delayed label arrives
-    ↓
-true_label stored
-    ↓
-Original prediction evaluated
-
-### 4. ML Layer
-
-Baseline model:
-
-RandomForestClassifier
-├── 100 estimators
-└── max_depth = 5
-
-The model is currently trained on **500 synthetic insurance claim samples** at server startup.
-
-Current prediction flow:
-
-Claim features
-    ↓
-RandomForest
-    ↓
-Fraud probability
-    ↓
-Risk level
-    ↓
-Feature explanations
-    ↓
-Persist prediction
-
-Current thresholds:
-
-score < 0.30         → low
-0.30 ≤ score < 0.70  → medium
-score ≥ 0.70         → high
-
-The stored binary prediction is based on:
-
-`fraud_score > 0.50`
+ ├── Claims Ingestion & Settlement (/api/claims)
+ │     ├── XGBoost Champion Model (14 features, data/models/xgb_champion.joblib)
+ │     └── Gain/Gini Feature Importance Explanations
+ ├── Analytics & Metrics (/api/analytics)
+ │     └── On-the-fly evaluation on settled claims
+ ├── Simulation Pipeline (/api/sim)
+ │     ├── Discrete clock & chronological replay (backend/data/claims_sim.csv)
+ │     ├── Settled vs. Pending partition (Contract S1/S2)
+ │     ├── Automated retraining every 25 settled claims (RF vs LR by PR-AUC)
+ │     └── MLflow experiment tracking (mlruns/)
+ ├── Prometheus Exporter (/metrics)
+ │     └── 6 gauges + 1 counter from app/pipeline/state.py
+ └── Database Persistence Layer (app/database.py)
+       └── PostgreSQL (Neon) / SQLite (claims table)
+```
 
 ## Known Limitations
 
-- **Destructive Dev Seed**: `POST /api/dev/seed` (and related seed functionality, including `python -m backend.seed`) deletes existing claims before inserting the development dataset. It is unauthenticated and unguarded. Do not run it against data you want to keep.
+- **Two Separate Datasets and Models**: The real-time scoring application operates on the 14-feature automobile dataset with XGBoost, while the simulation pipeline runs on a 13-feature synthetic chronological dataset with RF/LR retraining.
+- **Simulated Delays**: Delays are generated uniformly between 10 and 30 days (seed 42) rather than drawn from complex empirical hazard curves.
+- **Small Simulation Dataset**: The simulation dataset contains 1,000 claims.
+- **Advisory / Unimplemented Drift Monitoring**: Feature drift monitoring via Population Stability Index (PSI) is designed but not yet coded.
+- **No Promotion Rule**: Newly retrained simulation models unconditionally replace the active model without evaluating candidate performance against the incumbent champion.
+- **No Authentication or RBAC**: API endpoints are public and lack token authentication or role separation.
+- **In-Memory Simulation State**: Simulation state is stored in memory and resets when the server process terminates.
+- **Destructive Seed Endpoint**: `POST /api/seed` wipes the `claims` table prior to inserting test data.
 
-- **No Schema Migrations**: The database schema is currently created with SQLAlchemy `create_all`; Alembic has not yet been introduced.
+## Next Steps & Roadmap
 
-- **Synthetic Data**: The current ML pipeline uses synthetic insurance features rather than proprietary or real-world insurance claim records.
-
-- **Static Baseline Model**: The model is trained once at application startup. Automated retraining, model promotion, and drift monitoring are not yet implemented.
-
-- **No Model Version Tracking**: Predictions currently do not record an explicit model version alongside the stored prediction.
-
-- **No Production Authentication**: The API currently has no user authentication or role-based access control.
-
-- **Development-Oriented Infrastructure**: The application is currently structured as an MVP/development system rather than a production insurance fraud platform.
-
-## Tentative Next Steps
-
-*(Planned for future iterations — not yet implemented)*
-
-### Core MLOps / Delayed-Label Workflow
-
-- [ ] Add model versioning so every prediction records which model version produced it.
-- [ ] Build a retraining workflow using newly arrived delayed labels.
-- [ ] Compare newly trained models against the currently deployed baseline before promotion.
-- [ ] Track model performance across prediction cohorts and investigation periods.
-- [ ] Add drift monitoring for incoming claim features and model predictions.
+### Core MLOps & Simulation
+- [x] Build automated retraining pipeline triggered by delayed label accumulation ($\ge 25$ settled).
+- [x] Integrate MLflow tracking for retraining parameters, cohort sizes, and metrics.
+- [x] Expose Prometheus metrics endpoint (`/metrics`) for simulation observability.
+- [ ] Implement model promotion rule: compare newly trained model PR-AUC against incumbent baseline before promotion.
+- [ ] Add Population Stability Index (PSI) drift monitoring for incoming features and predictions (`drift.py`, `/api/sim/drift`).
+- [ ] Track performance across distinct investigation cohorts and elapsed time windows.
 
 ### Explainability
+- [x] Implement directional tree feature importance explanations (Gain/Gini-based).
+- [ ] Evaluate SHAP (Shapley Additive exPlanations) for local game-theoretic attribution.
 
-- [ ] Evaluate SHAP (Shapley Additive exPlanations) for more robust local feature explanations.
+### Data & Model Enhancements
+- [x] Integrate real-world automobile insurance claim dataset (`carclaims_processed.csv`, 15,420 rows).
+- [x] Train and benchmark multiple model architectures (Logistic Regression, Random Forest, XGBoost).
+- [x] Address severe class imbalance using class weights (`scale_pos_weight`) and PR-AUC metric selection.
+- [x] Fast model loading from pre-trained serialized artifact (<10ms serving startup).
+- [ ] Unify feature space between production scoring model and chronological simulation pipeline.
 
-### Data / Model Improvements
-
-- [ ] Evaluate the pipeline on a real or public insurance fraud dataset.
-- [ ] Address class imbalance and evaluate appropriate fraud-detection metrics.
-- [ ] Add reproducible model training and experiment tracking (e.g. MLflow).
-
-### Production Infrastructure
-
-- [ ] Add Alembic migrations for the existing SQLAlchemy schema.
-- [ ] Guard or authenticate the destructive development seed endpoint.
-- [ ] Add user authentication (OAuth2 / JWT) and role-based access control (e.g. Adjuster vs Analyst views).
-- [ ] Add stronger API and frontend integration tests.
-- [ ] Add Docker-based deployment and production configuration.
+### Infrastructure & Deployment
+- [x] Dockerfile for containerized backend serving with automated build-time model generation.
+- [x] GitHub Actions CI workflow for backend tests and frontend build.
+- [ ] Docker Compose multi-service orchestration (TODO: docs/DOCKER.md).
+- [ ] Add Alembic database migrations.
+- [ ] Add user authentication (OAuth2 / JWT) and role-based access control.
+- [ ] Workflow orchestration with Apache Airflow.
+- [ ] Data and artifact version control with DVC.
