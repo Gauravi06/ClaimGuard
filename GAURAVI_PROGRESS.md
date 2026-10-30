@@ -131,3 +131,23 @@ This document serves as the live progress documentation for Gauravi's track (ML 
    - **Section 5 (Limitations)**: Documented architectural decoupling, synthetic uniform delays, 1k simulation scale, advisory drift detection, and demonstration auth status.
 2. **Track Completion Status**:
    - Tasks **G1, G2, G3, G4** are all fully implemented, verified, and committed. All 120 tests pass.
+
+---
+
+## 4. Upstream Integration & Synchronization (30 Oct 2026)
+
+### 4.1 Merge of `origin/main`
+- Merged `origin/main` into working branch `gauravi/shap-results` using standard git merge (`--no-rebase`).
+- **Result**: Merge completed cleanly with 0 conflicts, integrating Lara's CI workflow (`.github/workflows/ci.yml`), refreshed `README.md`, and updated `progress.md`.
+- **Validation**:
+  - `pytest backend/tests`: 45 passed (with `DATABASE_URL=sqlite:///./test.db`, `PYTHONPATH=backend`).
+  - `pytest tests`: 75 passed (including all 5 SHAP tests and 2 settlement comparison tests).
+  - `npm run build` in `frontend/`: successfully compiled in 5.56s.
+
+### 4.2 Key Architectural Decision: `backend/app/models.py` Update
+- **Issue Discovered**: In `backend/app/models.py`, `class Explanation(BaseModel)` only declared `feature`, `importance`, `value`, and `direction`. Even though `ml_pipeline.explain` computed signed `shap_value`, Pydantic v2 automatically stripped undeclared extra fields during `Claim` validation. Consequently, `POST /api/claims`, `GET /api/claims`, and `GET /api/claims/{id}` dropped `shap_value`, preventing the ClaimDetail UI from receiving SHAP data.
+- **Decision & Fix**: Added `shap_value: Optional[float] = None` to `Explanation` in `backend/app/models.py` with explicit user confirmation.
+  - Leaves database schema unchanged (`explanations` is stored as JSON/JSONB).
+  - Preserves contract field compatibility.
+  - Allows the API response to include SHAP values for the ClaimDetail UI, while enabling seamless fallback for older claims without `shap_value`.
+
