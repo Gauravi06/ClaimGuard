@@ -39,12 +39,12 @@ This document serves as the live progress documentation for Gauravi's track (ML 
 
 ### 1.3 Local Environment & Test Suites Run
 - Python version: 3.12.8 on Windows.
-- Installed dependencies: `scikit-learn`, `xgboost`, `pandas`, `fastapi`, `uvicorn`, `mlflow`, `sqlalchemy`, `psycopg-binary`, `prometheus_client`, `pytest`, `shap`.
+- Installed dependencies: `scikit-learn`, `xgboost`, `pandas`, `fastapi`, `uvicorn`, `mlflow`, `sqlalchemy`, `psycopg-binary`, `prometheus_client`, `pytest`, `shap`, `matplotlib`.
 - SQLite `test.db` initialized with `init_db()`.
 - Verified test suites:
   - `pytest backend/tests`: 45 passed (with `DATABASE_URL=sqlite:///./test.db`, `PYTHONPATH=backend`).
-  - `pytest tests`: 73 passed (including all 5 SHAP tests in `tests/test_shap_explanations.py`).
-  - Total: 118 passed, 0 failures.
+  - `pytest tests`: 75 passed (including 5 SHAP tests and 2 settlement comparison tests).
+  - Total: 120 passed, 0 failures.
 
 ---
 
@@ -55,8 +55,8 @@ This document serves as the live progress documentation for Gauravi's track (ML 
 | **Setup** | Repo check, branch audit, dataset verification, branch `gauravi/shap-results` | **DONE** | - | Clean state verified |
 | **G1** | SHAP in scoring explanation (`TreeExplainer`, top-5, lazy import fallback, requirements, tests) | **DONE** | `feat(ml): SHAP explanations` | Fully tested (45 + 73 passed) |
 | **G2** | SHAP bars on Claim Detail UI (`ClaimDetail.jsx`, horizontal signed bars) | **DONE** | `feat(frontend): SHAP bars on claim detail` | Build & tests verified |
-| **G3** | Settlement-aware vs naive experiment (`experiments/settlement_comparison.py`, charts) | Pending | `feat(experiments): settlement-aware vs naive comparison` | Next prompt |
-| **G4** | Results document (`docs/RESULTS.md` with empirical data & figures) | Pending | `docs: results write-up` | Next |
+| **G3** | Settlement-aware vs naive experiment (`experiments/settlement_comparison.py`, charts) | **DONE** | `feat(experiments): settlement-aware vs naive comparison` | 10 dates evaluated, charts in `docs/figures/` |
+| **G4** | Results document (`docs/RESULTS.md` with empirical data & figures) | Pending | `docs: results write-up` | Next prompt |
 
 ---
 
@@ -100,3 +100,23 @@ This document serves as the live progress documentation for Gauravi's track (ML 
    - `npm run build` in `frontend/` succeeded with 0 errors (`✓ built in 8.48s`).
    - `pytest backend/tests` passed 45/45.
    - `pytest tests` passed 73/73.
+
+### Task G3: Settlement-Aware vs Naive Retraining Experiment
+1. **Experiment Script Design (`experiments/settlement_comparison.py`)**:
+   - Utilizes `get_settled` and `get_pending` from `app.pipeline.simulation` in read-only mode, with `backend/data/claims_sim.csv`.
+   - Fixed holdout set: 20% most recently filed claims (last 200 rows by `filed_at`), using true labels from the CSV. Holdout claims are strictly excluded from both training pools.
+   - Evaluated 10 timesteps every 7 days from `2015-01-22` (first date with $\ge 25$ settled claims) through `2015-03-26`.
+2. **Models Evaluated**:
+   - **Model A (Naive)**: Trains on all claims filed so far, assuming pending claims are legitimate ($is\_fraud = 0$).
+   - **Model B (Settlement-Aware)**: Trains exclusively on settled claims with verified ground-truth labels.
+   - Both models use identical `RandomForestClassifier(n_estimators=100, random_state=42)` with `StandardScaler` and `OneHotEncoder`.
+3. **Empirical Findings**:
+   - **Catastrophic Recall Suppression in Naive Model**: During the first 4 retrain cycles (`2015-01-22` to `2015-02-12`), the Naive model achieves **0.0000 recall** (0 detected frauds). Labeling 300+ pending claims as legitimate corrupts the classifier into associating fraud characteristics with legitimate claims. In contrast, the Settlement-Aware model immediately detects fraud with 5.4% to 18.9% recall.
+   - **Mid-Simulation Advantage**: On `2015-02-19`, Settlement-Aware recall is 21.6% vs Naive 2.7% (8x higher); on `2015-02-26`, 29.7% vs 10.8% (2.75x higher).
+   - **PR-AUC Comparison**: Settlement-Aware beats Naive at 5/10 dates (`2015-01-22`, `2015-02-12`, `2015-02-26`, `2015-03-05`, `2015-03-12`). On `2015-01-29` and `2015-02-05`, Naive achieves slightly higher PR-AUC due to raw sample size, but produces 0 recall at operational decision thresholds.
+   - **Convergence**: As the pending backlog empties at the end of the timeline (`2015-03-19` and `2015-03-26`), both pipelines train on the identical 800 claims and converge to 0.3255 PR-AUC and 32.4% recall.
+4. **Generated Figures & Results Table**:
+   - Results table saved to [`results/settlement_comparison.csv`](file:///E:/Projects/ClaimGuard-git/results/settlement_comparison.csv).
+   - High-resolution figures saved to [`docs/figures/settlement_pr_auc_over_time.png`](file:///E:/Projects/ClaimGuard-git/docs/figures/settlement_pr_auc_over_time.png) and [`docs/figures/settlement_recall_over_time.png`](file:///E:/Projects/ClaimGuard-git/docs/figures/settlement_recall_over_time.png).
+5. **Automated Testing**:
+   - Added [`tests/test_settlement_comparison.py`](file:///E:/Projects/ClaimGuard-git/tests/test_settlement_comparison.py) testing holdout temporal isolation and execution on a 100-row sample. Both tests pass.
