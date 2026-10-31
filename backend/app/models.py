@@ -42,6 +42,7 @@ class Explanation(BaseModel):
     importance: float
     value: float
     direction: str
+    shap_value: Optional[float] = None
 
 class Claim(ClaimBase):
     id: UUID = Field(default_factory=uuid4)

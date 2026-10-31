@@ -9,12 +9,13 @@ Architectural highlights:
 - Requires the artifact at serving time; a missing artifact fails clearly instead of
   silently launching a training job. Use train() for deliberate/offline training.
 - Requires all production model features per prediction request; no silent defaults.
-- Generates Gini/Gain-based tree feature importance explanations (not SHAP).
+- Generates Tree SHAP explanations using shap.TreeExplainer with graceful feature importance fallback.
 - Inference always uses the feature order stored inside the serialized artifact.
 """
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -27,6 +28,8 @@ from app.ml.train_comparison import (
     EXPANDED_FEATURE_COLUMNS,
     train_and_save_champion,
 )
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_ARTIFACT = PROJECT_ROOT / "data" / "models" / "xgb_champion.joblib"
@@ -60,6 +63,7 @@ class MLPipeline:
         # Populated from the artifact on load; never assumed.
         self.feature_names: List[str] = []
         self.is_trained = False
+        self.explainer: Optional[Any] = None
 
         self.claim_type_map = CLAIM_TYPE_MAP
 
@@ -139,6 +143,17 @@ class MLPipeline:
         self.model = model
         self.feature_names = names
         self.is_trained = True
+        self.explainer = None
+
+    def _get_explainer(self) -> Any:
+        """Get or build the cached shap.TreeExplainer for the champion model."""
+        if self.explainer is None:
+            import shap
+
+            if not self.is_trained or self.model is None:
+                self.load_or_train()
+            self.explainer = shap.TreeExplainer(self.model)
+        return self.explainer
 
     def train(self, data_path: Optional[Path | str] = None):
         """Explicit offline training: train the champion, save it, then load it
@@ -243,18 +258,8 @@ class MLPipeline:
         X, _ = self._extract_features(claim_data)
         return float(self.model.predict_proba(X)[0][1])
 
-    def explain(self, claim_data: Dict[str, Any], score: float) -> List[Dict[str, Any]]:
-        """Tree Feature Importance Explanations (Gain/Gini-based, not SHAP).
-        
-        Evaluates top contributing features based on model feature importances
-        and domain thresholds.
-        """
-        if not self.is_trained:
-            self.load_or_train()
-
-        _, feature_values = self._extract_features(claim_data)
-        importances = self.model.feature_importances_
-
+    def _fallback_explain(self, feature_values: List[float], importances: Any) -> List[Dict[str, Any]]:
+        """Fallback explanation using Gini/Gain feature importances if SHAP fails."""
         explanations = []
         for name, imp, val in zip(self.feature_names, importances, feature_values):
             if imp > 0.03:
@@ -287,6 +292,51 @@ class MLPipeline:
 
         explanations.sort(key=lambda x: x["importance"], reverse=True)
         return explanations
+
+    def explain(self, claim_data: Dict[str, Any], score: float) -> List[Dict[str, Any]]:
+        """Tree SHAP explanations using cached shap.TreeExplainer on XGBoost champion,
+        with graceful feature importance fallback.
+
+        Each explanation item retains existing keys ('feature', 'importance', 'value', 'direction')
+        and gains 'shap_value' (signed float; positive pushes toward fraud) with
+        'direction' set to 'increases risk' or 'decreases risk'. Returns top 5 features
+        sorted descending by absolute SHAP value.
+        """
+        if not self.is_trained:
+            self.load_or_train()
+
+        X, feature_values = self._extract_features(claim_data)
+        importances = getattr(self.model, "feature_importances_", [0.0] * len(self.feature_names))
+
+        try:
+            explainer = self._get_explainer()
+            vals = explainer.shap_values(X)
+            if isinstance(vals, list):
+                shap_row = vals[1][0] if len(vals) > 1 else vals[0][0]
+            elif hasattr(vals, "ndim") and vals.ndim == 3:
+                shap_row = vals[0, :, 1]
+            elif hasattr(vals, "ndim") and vals.ndim == 2:
+                shap_row = vals[0]
+            else:
+                shap_row = vals
+
+            explanations = []
+            for name, s_val, imp, val in zip(self.feature_names, shap_row, importances, feature_values):
+                s_float = float(s_val)
+                direction = "increases risk" if s_float > 0 else "decreases risk"
+                explanations.append({
+                    "feature": name,
+                    "importance": round(float(imp), 4),
+                    "value": float(val),
+                    "shap_value": round(s_float, 4),
+                    "direction": direction,
+                })
+
+            explanations.sort(key=lambda x: abs(x["shap_value"]), reverse=True)
+            return explanations[:5]
+        except Exception as exc:
+            logger.warning("SHAP explanation failed, falling back to feature importance: %s", exc)
+            return self._fallback_explain(feature_values, importances)
 
 
 ml_pipeline = MLPipeline()
