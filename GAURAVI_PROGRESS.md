@@ -151,3 +151,62 @@ This document serves as the live progress documentation for Gauravi's track (ML 
   - Preserves contract field compatibility.
   - Allows the API response to include SHAP values for the ClaimDetail UI, while enabling seamless fallback for older claims without `shap_value`.
 
+---
+
+## 5. CI Diagnosis & PR #4 Fixes (31 Oct 2026)
+
+### 5.1 CI Red Failure Diagnosis (`backend` Job, Step 8 `Run root tests`)
+- **Symptoms**: In GitHub Actions run 41000605496 for PR #4, the `backend` workflow succeeded through Step 7 (`Run backend tests` - 45 passed), but failed on Step 8 (`Run root tests`: `pytest tests`) with process exit code 2.
+- **Root Cause**:
+  - The CI workflow `.github/workflows/ci.yml` installs dependencies strictly via:
+    ```bash
+    pip install -r backend/requirements.txt pytest httpx
+    ```
+  - `backend/requirements.txt` does not include `matplotlib`.
+  - `experiments/settlement_comparison.py` had top-level `import matplotlib` and `import matplotlib.pyplot as plt`.
+  - `tests/test_settlement_comparison.py` imports `experiments.settlement_comparison`.
+  - During pytest test collection in CI, importing `test_settlement_comparison.py` failed with:
+    ```
+    ModuleNotFoundError: No module named 'matplotlib'
+    Interrupted: 1 error during collection (exit code 2)
+    ```
+
+### 5.2 Resolution Implemented in Gauravi's Files
+- **File Modified**: [`experiments/settlement_comparison.py`](file:///e:/Projects/ClaimGuard-git/experiments/settlement_comparison.py) (owned by Gauravi).
+  - Removed top-level `import matplotlib` / `import matplotlib.pyplot as plt`.
+  - Moved the `matplotlib` import inside `plot_comparison_charts()` lazily.
+  - Because `tests/test_settlement_comparison.py` only tests dataset splitting and numerical experiment execution without generating chart PNGs (`figures_dir=None`), `pytest tests` now collects and executes with 75 passed tests even in minimal headless environments lacking `matplotlib`.
+- **Validation**:
+  - Masking `matplotlib` in Python environment (`sys.modules['matplotlib'] = None`) confirmed `pytest tests` passes 75/75 with 0 errors.
+
+### 5.3 Exact Change for Owner (Lara / CI Maintainer)
+If the backend/CI owner prefers having all visualization libraries installed across all CI runners or Docker containers, the exact recommended change is:
+
+In [`backend/requirements.txt`](file:///e:/Projects/ClaimGuard-git/backend/requirements.txt), add:
+```
+matplotlib
+```
+Alternatively, in [`.github/workflows/ci.yml`](file:///e:/Projects/ClaimGuard-git/.github/workflows/ci.yml) line 29:
+```diff
+-          pip install -r backend/requirements.txt pytest httpx
++          pip install -r backend/requirements.txt pytest httpx matplotlib
+```
+*(Per policy, `.github/workflows/ci.yml` and teammate files were not touched directly; this is documented here for the owner).*
+
+### 5.4 RESULTS.md Section 4 Dry-Run Table Update
+- Replaced the preliminary simulation table and TODO placeholders in [`docs/RESULTS.md`](file:///e:/Projects/ClaimGuard-git/docs/RESULTS.md) with Rashi's dry-run table:
+  - 8 simulation dates, 6 retrain cycles (`2015-01-22` to `2015-02-26`), 3 promotions (v1, v2, v3).
+  - First model's PR-AUC on `2015-01-22` updated to 0.5769 (`champion PR-AUC: None`).
+  - Documented promotion gate logic: `model_version` increments only when candidate strictly beats incumbent champion on the time-based holdout (newest 20% of settled claims).
+  - Candidate rejection documented for `2015-02-05` (0.5518 < 0.6164), `2015-02-19` (0.4997 < 0.6670), and `2015-02-26` (0.4949 < 0.5341), where champion was retained.
+
+### 5.5 Unused Figure Deletion
+- Deleted duplicate figures:
+  - `docs/figures/pr_auc_over_time.png`
+  - `docs/figures/recall_over_time.png`
+- Verified that [`docs/RESULTS.md`](file:///e:/Projects/ClaimGuard-git/docs/RESULTS.md) cleanly references the canonical figures:
+  - `docs/figures/settlement_pr_auc_over_time.png`
+  - `docs/figures/settlement_recall_over_time.png`
+- Removed duplicate savefig calls in `experiments/settlement_comparison.py`.
+
+

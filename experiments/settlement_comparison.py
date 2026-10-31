@@ -23,9 +23,6 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import matplotlib
-matplotlib.use("Agg")  # Non-interactive headless backend
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -231,6 +228,10 @@ def run_experiment(
 
 def plot_comparison_charts(results_df: pd.DataFrame, output_dir: Path) -> None:
     """Generate high-resolution PR-AUC and Recall comparison charts."""
+    import matplotlib
+    matplotlib.use("Agg")  # Non-interactive headless backend
+    import matplotlib.pyplot as plt
+
     dates = results_df["date"].tolist()
     x = np.arange(len(dates))
 
@@ -268,7 +269,6 @@ def plot_comparison_charts(results_df: pd.DataFrame, output_dir: Path) -> None:
     plt.legend(frameon=True, facecolor="white", edgecolor="#cbd5e1", loc="lower right")
     plt.tight_layout()
     plt.savefig(output_dir / "settlement_pr_auc_over_time.png")
-    plt.savefig(output_dir / "pr_auc_over_time.png")
     plt.close()
 
     # 2. Recall Chart
@@ -299,7 +299,6 @@ def plot_comparison_charts(results_df: pd.DataFrame, output_dir: Path) -> None:
     plt.legend(frameon=True, facecolor="white", edgecolor="#cbd5e1", loc="upper left")
     plt.tight_layout()
     plt.savefig(output_dir / "settlement_recall_over_time.png")
-    plt.savefig(output_dir / "recall_over_time.png")
     plt.close()
 
 
