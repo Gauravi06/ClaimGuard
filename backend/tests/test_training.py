@@ -1,6 +1,6 @@
 """
 backend/tests/test_training.py
-Unit tests for R4 model training, selection, metrics, and scoring.
+Unit tests for R4/R1 model training, XGBoost candidate, promotion rules, and scoring.
 """
 import pytest
 from datetime import date
@@ -8,7 +8,22 @@ import pandas as pd
 import numpy as np
 
 from app.pipeline.simulation import get_settled, get_pending
-from app.pipeline.training import train_and_log, score_claims, _create_model_pipeline
+from app.pipeline.training import (
+    train_and_log,
+    score_claims,
+    _create_model_pipeline,
+    reset_model,
+    get_model_version,
+    get_current_model,
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_model_state():
+    """Ensure clean model state before each test."""
+    reset_model()
+    yield
+    reset_model()
 
 
 def test_train_and_log_real_date_structure():
@@ -17,7 +32,10 @@ def test_train_and_log_real_date_structure():
     res = train_and_log(as_of)
 
     assert isinstance(res, dict)
-    expected_top_keys = {"run_id", "as_of", "n_train", "n_pending", "model_version", "metrics"}
+    expected_top_keys = {
+        "run_id", "as_of", "n_train", "n_pending", "model_version",
+        "metrics", "promoted", "champion_pr_auc", "candidate_pr_auc", "best_model", "retrained"
+    }
     assert set(res.keys()) == expected_top_keys
 
     assert isinstance(res["run_id"], str)
@@ -26,6 +44,10 @@ def test_train_and_log_real_date_structure():
     assert res["n_train"] == len(get_settled(as_of))
     assert res["n_pending"] == len(get_pending(as_of))
     assert isinstance(res["model_version"], int)
+    assert isinstance(res["promoted"], bool)
+    assert isinstance(res["candidate_pr_auc"], float)
+    assert isinstance(res["best_model"], str)
+    assert res["best_model"] in {"XGBoost", "RandomForest", "LogisticRegression"}
 
     metrics = res["metrics"]
     expected_metric_keys = {"precision", "recall", "f1", "pr_auc"}
@@ -35,10 +57,11 @@ def test_train_and_log_real_date_structure():
         assert 0.0 <= metrics[k] <= 1.0
 
 
-def test_both_model_types_considered():
-    """Test that both RandomForest and LogisticRegression pipelines can be created and fitted."""
+def test_three_candidate_model_types_considered():
+    """Test that RandomForest, LogisticRegression, and XGBoost pipelines can be created and fitted."""
     rf_pipe = _create_model_pipeline("rf")
     lr_pipe = _create_model_pipeline("lr")
+    xgb_pipe = _create_model_pipeline("xgb")
 
     as_of = date(2015, 2, 15)
     settled = get_settled(as_of)
@@ -56,17 +79,58 @@ def test_both_model_types_considered():
     lr_probs = lr_pipe.predict_proba(X)[:, 1]
     assert len(lr_probs) == len(X)
 
+    xgb_pipe.fit(X, y)
+    xgb_probs = xgb_pipe.predict_proba(X)[:, 1]
+    assert len(xgb_probs) == len(X)
 
-def test_model_version_increments():
-    """Test that model_version increases across consecutive training calls."""
-    as_of = date(2015, 2, 1)
-    res1 = train_and_log(as_of)
-    v1 = res1["model_version"]
 
-    res2 = train_and_log(as_of)
-    v2 = res2["model_version"]
+def test_first_model_is_always_promoted():
+    """First model retrain is always promoted to version 1 with champion_pr_auc as None."""
+    as_of = date(2015, 1, 22)  # First date with >= 25 settled claims (61 settled)
+    res = train_and_log(as_of)
 
-    assert v2 == v1 + 1
+    assert res["promoted"] is True
+    assert res["model_version"] == 1
+    assert res["champion_pr_auc"] is None
+    assert res["candidate_pr_auc"] > 0.0
+    assert get_model_version() == 1
+    assert get_current_model() is not None
+
+
+def test_candidate_worse_is_not_promoted_and_version_stays():
+    """When a new candidate fails to beat the serving champion on holdout, it is not promoted and version stays."""
+    # First retrain to promote v1 at 2015-01-22
+    res1 = train_and_log(date(2015, 1, 22))
+    assert res1["promoted"] is True
+    assert res1["model_version"] == 1
+
+    # Second retrain promotes v2 at 2015-01-29 (PR-AUC 0.6451 > 0.2095)
+    res2 = train_and_log(date(2015, 1, 29))
+    assert res2["promoted"] is True
+    assert res2["model_version"] == 2
+
+    # Third retrain at 2015-02-05: candidate (0.5518) fails to beat champion (0.6164)
+    res3 = train_and_log(date(2015, 2, 5))
+    assert res3["promoted"] is False
+    assert res3["champion_pr_auc"] is not None
+    assert res3["candidate_pr_auc"] < res3["champion_pr_auc"]
+    assert res3["model_version"] == 2
+    assert get_model_version() == 2
+
+
+def test_better_candidate_is_promoted_and_version_increases():
+    """When a new candidate beats the serving champion on holdout, it is promoted and model_version increments."""
+    # Step 1: initial model v1 promoted at 2015-01-22
+    res1 = train_and_log(date(2015, 1, 22))
+    assert res1["promoted"] is True
+    assert res1["model_version"] == 1
+
+    # Step 2: at 2015-01-29, new candidate PR-AUC (~0.645) beats champion (~0.210) on 34 holdout claims
+    res2 = train_and_log(date(2015, 1, 29))
+    assert res2["promoted"] is True
+    assert res2["model_version"] == 2
+    assert res2["candidate_pr_auc"] > res2["champion_pr_auc"]
+    assert get_model_version() == 2
 
 
 def test_score_claims_output_and_bounds():
@@ -94,3 +158,4 @@ def test_pending_claims_not_used_in_training():
     assert res["n_train"] == len(settled_df)
     assert res["n_pending"] == len(pending_df)
     assert "is_fraud" not in pending_df.columns
+

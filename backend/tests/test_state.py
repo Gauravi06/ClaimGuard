@@ -70,7 +70,17 @@ def test_no_retrain_at_24_settled(monkeypatch):
 def test_first_retrain_at_25_settled(monkeypatch):
     """At 25 settled claims, first retrain is triggered and model_version becomes 1."""
     def mock_df_of_length(n):
-        return pd.DataFrame([{"claim_id": f"c_{i}"} for i in range(n)])
+        from app.pipeline.training import FEATURES
+        return pd.DataFrame([
+            {
+                "claim_id": f"c_{i}",
+                "filed_at": date(2015, 1, 1),
+                "is_fraud": 1 if i % 4 == 0 else 0,
+                **{f: float(i + 1) for f in FEATURES if f != "police_report_available"},
+                "police_report_available": "unknown",
+            }
+            for i in range(n)
+        ])
 
     monkeypatch.setattr("app.pipeline.simulation.get_settled", lambda as_of: mock_df_of_length(25))
     res = advance(7)
@@ -103,12 +113,27 @@ def test_retrain_when_newly_settled_at_least_25():
     assert state.last_retrain_settled_count >= 25
 
 def test_model_version_increases_only_on_retrain(monkeypatch):
-    """model_version increases ONLY when retraining occurs."""
+    """model_version increases ONLY when retraining occurs and promotes."""
     # Start: version is 0
     assert state.model_version == 0
 
     def mock_df_of_length(n):
         return pd.DataFrame([{"claim_id": f"c_{i}"} for i in range(n)])
+
+    retrain_count = 0
+    def mock_train(as_of):
+        nonlocal retrain_count
+        retrain_count += 1
+        return {
+            "model_version": retrain_count,
+            "metrics": {"pr_auc": 0.5 + 0.1 * retrain_count},
+            "promoted": True,
+            "champion_pr_auc": None if retrain_count == 1 else 0.4,
+            "candidate_pr_auc": 0.5 + 0.1 * retrain_count,
+            "best_model": "XGBoost",
+        }
+
+    monkeypatch.setattr("app.pipeline.training.train_and_log", mock_train)
 
     # 1. 0 settled claims -> no retrain -> version stays 0
     monkeypatch.setattr("app.pipeline.simulation.get_settled", lambda as_of: mock_df_of_length(0))

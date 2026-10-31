@@ -43,3 +43,53 @@ Values sourced exclusively from `app/pipeline/state.py`.
 - Counter:
   - `claimguard_retrains_total`: total number of model retraining events
 
+## S5. Model Promotion (R1)
+train_and_log(as_of: date) -> dict
+  Optional fields added:
+  - "promoted": bool (true if candidate promoted or first retrain, false if champion kept)
+  - "champion_pr_auc": float | None (PR-AUC of serving model on holdout, None on first retrain)
+  - "candidate_pr_auc": float (PR-AUC of best candidate on holdout)
+  - "best_model": str ("XGBoost", "RandomForest", or "LogisticRegression")
+POST /api/sim/advance optional response fields (when retrained is true):
+  - "promoted": bool
+  - "champion_pr_auc": float | None
+  - "candidate_pr_auc": float | None
+  - "best_model": str | None
+Rules:
+- 3 candidates trained on settled claims: RandomForest, LogisticRegression, XGBoost.
+- Candidate with highest PR-AUC evaluated against currently serving champion on time-based holdout.
+- Promoted only if candidate_pr_auc > champion_pr_auc. First model (v1) is always promoted.
+- model_version increases ONLY on promotion.
+- state.retrains_total counts every retrain attempt.
+
+## S6. Edge Cases and Idempotency (R2)
+1. No new settled claims (`newly_settled <= 0`):
+   - Clock advances normally, but retraining is skipped.
+   - Response returns `retrained: false`, `newly_settled: int <= 0`, preserving `model_version`.
+2. Single-class settled data:
+   - Does not crash. Skips training, logs run, returns `retrained: false` with `"reason"`.
+   - Previous serving model and `model_version` remain unchanged.
+3. Training exception:
+   - Caught gracefully in pipeline and routes.
+   - Logs failure, preserves previous model and `model_version`.
+   - Returns HTTP 200 with `retrained: false` and `"error": str(exc)`.
+4. Idempotency:
+   - Calling `train_and_log(as_of)` multiple times with identical `as_of` and settled count returns identical metrics and result without re-training or bumping `model_version` / `retrains_total` twice.
+5. Empty pending set at dataset end:
+   - When all simulation claims have settled, `GET /api/sim/pending` returns `{"as_of": "...", "count": 0, "claims": []}`.
+6. Clock past last filed date:
+   - Advancing past dataset end operates smoothly without errors.
+
+## S7. Feature Drift Check (PSI) (R3)
+`GET /api/sim/drift` -> `{"as_of": str, "status": str, "max_psi": float | null, "features": [{"name": str, "psi": float}]}`
+- Function: `compute_drift(as_of: date) -> dict` in `backend/app/pipeline/drift.py`.
+- Features: Evaluates only the 13 contract features between claims used at the last retrain and recent claims filed in the 14 days before `as_of`. Never uses or exposes label columns.
+- Status rules:
+  - `"no model yet"`: returned before the first model retrain (model_version == 0), with `max_psi: null` and `features: []`.
+  - `"ok"`: `max_psi < 0.10`
+  - `"warn"`: `0.10 <= max_psi <= 0.25`
+  - `"alert"`: `max_psi > 0.25`
+- Advisory flag:
+  - Default: Advisory only (`DRIFT_TRIGGERS_RETRAIN=false`). Does not alter retrain behavior.
+  - When `DRIFT_TRIGGERS_RETRAIN=true` and `status == "alert"`, clock advance triggers a model retrain when new settled claims exist.
+
