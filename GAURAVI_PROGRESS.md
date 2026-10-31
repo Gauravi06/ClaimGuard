@@ -156,42 +156,51 @@ This document serves as the live progress documentation for Gauravi's track (ML 
 ## 5. CI Diagnosis & PR #4 Fixes (31 Oct 2026)
 
 ### 5.1 CI Red Failure Diagnosis (`backend` Job, Step 8 `Run root tests`)
-- **Symptoms**: In GitHub Actions run 41000605496 for PR #4, the `backend` workflow succeeded through Step 7 (`Run backend tests` - 45 passed), but failed on Step 8 (`Run root tests`: `pytest tests`) with process exit code 2.
-- **Root Cause**:
-  - The CI workflow `.github/workflows/ci.yml` installs dependencies strictly via:
-    ```bash
-    pip install -r backend/requirements.txt pytest httpx
-    ```
-  - `backend/requirements.txt` does not include `matplotlib`.
-  - `experiments/settlement_comparison.py` had top-level `import matplotlib` and `import matplotlib.pyplot as plt`.
-  - `tests/test_settlement_comparison.py` imports `experiments.settlement_comparison`.
-  - During pytest test collection in CI, importing `test_settlement_comparison.py` failed with:
-    ```
-    ModuleNotFoundError: No module named 'matplotlib'
-    Interrupted: 1 error during collection (exit code 2)
-    ```
+- **Symptoms**: In GitHub Actions run 41000605496 (and 41228964332) for PR #4, the `backend` workflow succeeded through Step 7 (`Run backend tests` - 45 passed), but failed on Step 8 (`Run root tests`: `pytest tests`) with process exit code 2.
+- **Root Cause Verified from GitHub Runner Logs**:
+  1. **Primary Failure**: In `.github/workflows/ci.yml`, the environment defines `PYTHONPATH: backend`. When `pytest tests` runs on Linux, Python's module search path only contains `/workspace/backend` and standard site-packages; the workspace root is not on `sys.path`.
+  2. In `tests/test_settlement_comparison.py`:
+     ```python
+     from experiments.settlement_comparison import (...)
+     ```
+     Because `experiments/` lives at the workspace root (not under `backend/`), pytest failed during test module collection with:
+     ```
+     ERROR collecting tests/test_settlement_comparison.py
+     ImportError: ModuleNotFoundError: No module named 'experiments'
+     !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+     Process completed with exit code 2.
+     ```
+  3. **Secondary Failure**: `experiments/settlement_comparison.py` also had a top-level `import matplotlib` / `import matplotlib.pyplot as plt`. In CI, dependencies are installed strictly via `pip install -r backend/requirements.txt pytest httpx`, which does not include `matplotlib`. Once `experiments` is resolved, missing `matplotlib` would likewise cause a collection failure.
 
 ### 5.2 Resolution Implemented in Gauravi's Files
-- **File Modified**: [`experiments/settlement_comparison.py`](file:///e:/Projects/ClaimGuard-git/experiments/settlement_comparison.py) (owned by Gauravi).
-  - Removed top-level `import matplotlib` / `import matplotlib.pyplot as plt`.
-  - Moved the `matplotlib` import inside `plot_comparison_charts()` lazily.
-  - Because `tests/test_settlement_comparison.py` only tests dataset splitting and numerical experiment execution without generating chart PNGs (`figures_dir=None`), `pytest tests` now collects and executes with 75 passed tests even in minimal headless environments lacking `matplotlib`.
+- **Files Modified**:
+  1. [`tests/test_settlement_comparison.py`](file:///e:/Projects/ClaimGuard-git/tests/test_settlement_comparison.py) (owned by Gauravi):
+     - Added dynamic `sys.path` injection for `_REPO_ROOT = Path(__file__).resolve().parents[1]` before importing `experiments`. This guarantees `experiments` imports cleanly regardless of whether `PYTHONPATH` points to `backend` or the root.
+  2. [`experiments/settlement_comparison.py`](file:///e:/Projects/ClaimGuard-git/experiments/settlement_comparison.py) (owned by Gauravi):
+     - Removed top-level `import matplotlib` / `import matplotlib.pyplot as plt`.
+     - Moved `matplotlib` import inside `plot_comparison_charts()` lazily.
+     - Because `tests/test_settlement_comparison.py` only tests data slicing and numerical execution without rendering charts (`figures_dir=None`), `pytest tests` executes cleanly even in minimal headless CI environments lacking `matplotlib`.
 - **Validation**:
-  - Masking `matplotlib` in Python environment (`sys.modules['matplotlib'] = None`) confirmed `pytest tests` passes 75/75 with 0 errors.
+  - `pytest backend/tests`: 45 passed in 15.77s.
+  - `pytest tests`: 75 passed in 16.15s.
+  - Total: 120 passed, 0 failures.
 
 ### 5.3 Exact Change for Owner (Lara / CI Maintainer)
-If the backend/CI owner prefers having all visualization libraries installed across all CI runners or Docker containers, the exact recommended change is:
+If the backend/CI owner prefers fixing this at the CI/root configuration level rather than per-test:
 
-In [`backend/requirements.txt`](file:///e:/Projects/ClaimGuard-git/backend/requirements.txt), add:
+In [`.github/workflows/ci.yml`](file:///e:/Projects/ClaimGuard-git/.github/workflows/ci.yml):
+```diff
+     env:
+       DATABASE_URL: sqlite:///test.db
+-      PYTHONPATH: backend
++      PYTHONPATH: backend:.
 ```
-matplotlib
-```
-Alternatively, in [`.github/workflows/ci.yml`](file:///e:/Projects/ClaimGuard-git/.github/workflows/ci.yml) line 29:
+And if visualization dependencies are desired in CI runners:
 ```diff
 -          pip install -r backend/requirements.txt pytest httpx
 +          pip install -r backend/requirements.txt pytest httpx matplotlib
 ```
-*(Per policy, `.github/workflows/ci.yml` and teammate files were not touched directly; this is documented here for the owner).*
+*(Per pair-programming policy, `.github/workflows/ci.yml` and teammate files were not touched directly; the self-contained fix was applied to Gauravi's own test and experiment files).*
 
 ### 5.4 RESULTS.md Section 4 Dry-Run Table Update
 - Replaced the preliminary simulation table and TODO placeholders in [`docs/RESULTS.md`](file:///e:/Projects/ClaimGuard-git/docs/RESULTS.md) with Rashi's dry-run table:

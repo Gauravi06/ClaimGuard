@@ -2,8 +2,16 @@
 Unit tests for the settlement-aware vs naive experiment module.
 """
 
+import sys
+from pathlib import Path
+
 import pandas as pd
 import pytest
+
+# Ensure repository root is on sys.path when running under PYTHONPATH=backend
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from experiments.settlement_comparison import (
     load_claims_data,
