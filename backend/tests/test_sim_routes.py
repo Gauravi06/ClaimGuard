@@ -11,6 +11,8 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def clean_simulation_state():
     """Ensure clean simulation state for each route test."""
+    from app.database import init_db
+    init_db()
     reset_state()
     yield
     reset_state()

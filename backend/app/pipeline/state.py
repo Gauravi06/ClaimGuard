@@ -27,15 +27,18 @@ class SimulationState:
         self.model_version: int = 0
         self.retrains_total: int = 0
         self.latest_metrics: Optional[Dict[str, Any]] = None
+        self._last_retrain_fingerprint: Optional[str] = None
 
     def reset(self, start_date: Optional[date] = None) -> None:
         """Reset state to initial values for test isolation."""
+        training.reset_model()
         self.start_date = start_date if start_date is not None else get_earliest_filed_at()
         self.simulated_date = self.start_date
         self.last_retrain_settled_count = 0
         self.model_version = 0
         self.retrains_total = 0
         self.latest_metrics = None
+        self._last_retrain_fingerprint = None
 
     def advance_date(self, days: int) -> date:
         """Increase simulated_date by the specified number of days and return it."""
@@ -87,11 +90,12 @@ class SimulationState:
            - either no model exists yet (model_version == 0), OR
            - newly_settled >= MIN_SETTLED.
         5. When retraining:
+           - increment retrains_total
            - call train_and_log(as_of)
+           - update model_version (increases only on promotion)
            - store result in latest_metrics
            - set last_retrain_settled_count = settled_count
-           - increment model_version and retrains_total
-        6. Return {simulated_date, newly_settled, retrained, model_version}.
+        6. Return {simulated_date, newly_settled, retrained, model_version, promoted, ...}.
         """
         self.advance_date(days)
         as_of = self.simulated_date
@@ -100,27 +104,64 @@ class SimulationState:
         settled_count = len(settled_df)
         newly_settled = settled_count - self.last_retrain_settled_count
 
-        should_retrain = (settled_count >= MIN_SETTLED) and (
-            self.model_version == 0 or newly_settled >= MIN_SETTLED
+        should_retrain = (
+            (settled_count >= MIN_SETTLED)
+            and (newly_settled > 0)
+            and (self.model_version == 0 or newly_settled >= MIN_SETTLED)
         )
 
-        if should_retrain:
-            metrics_dict = training.train_and_log(as_of)
-            self.model_version += 1
-            self.retrains_total += 1
-            metrics_dict["model_version"] = self.model_version
-            self.latest_metrics = metrics_dict
-            self.last_retrain_settled_count = settled_count
-            retrained = True
-        else:
-            retrained = False
+        # DRIFT_TRIGGERS_RETRAIN: advisory drift check can trigger retrain when true and status is 'alert' (R3)
+        import os
+        drift_triggers_retrain = os.getenv("DRIFT_TRIGGERS_RETRAIN", "false").lower() in ("true", "1", "yes")
+        if not should_retrain and drift_triggers_retrain and settled_count >= MIN_SETTLED and newly_settled > 0 and self.model_version > 0:
+            from .drift import compute_drift
+            drift_res = compute_drift(as_of)
+            if drift_res.get("status") == "alert":
+                should_retrain = True
 
-        return {
+        retrained = False
+        reason: Optional[str] = None
+        error: Optional[str] = None
+
+        if should_retrain:
+            fingerprint = f"{as_of.isoformat()}_{settled_count}"
+            try:
+                metrics_dict = training.train_and_log(as_of)
+                if metrics_dict.get("retrained", True) is False:
+                    retrained = False
+                    reason = metrics_dict.get("reason")
+                    error = metrics_dict.get("error")
+                else:
+                    retrained = True
+                    if fingerprint != self._last_retrain_fingerprint:
+                        self.retrains_total += 1
+                        self._last_retrain_fingerprint = fingerprint
+                    self.model_version = metrics_dict.get("model_version", self.model_version)
+                    self.latest_metrics = metrics_dict
+                    self.last_retrain_settled_count = settled_count
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).exception("Retraining failed in SimulationState.advance: %s", exc)
+                retrained = False
+                error = str(exc)
+
+        res = {
             "simulated_date": self.simulated_date.isoformat(),
             "newly_settled": newly_settled,
             "retrained": retrained,
             "model_version": self.model_version,
         }
+        if retrained and self.latest_metrics:
+            res["promoted"] = self.latest_metrics.get("promoted", False)
+            res["champion_pr_auc"] = self.latest_metrics.get("champion_pr_auc")
+            res["candidate_pr_auc"] = self.latest_metrics.get("candidate_pr_auc")
+            res["best_model"] = self.latest_metrics.get("best_model")
+        else:
+            if reason:
+                res["reason"] = reason
+            if error:
+                res["error"] = error
+        return res
 
 # Global in-memory simulation state
 state = SimulationState()

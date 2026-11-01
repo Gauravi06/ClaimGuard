@@ -174,3 +174,17 @@ def get_metrics_endpoint() -> Dict[str, Any]:
         "f1": float(metrics.get("f1", 0.0)),
         "pr_auc": float(metrics.get("pr_auc", 0.0))
     }
+
+
+@router.get("/drift")
+def get_drift_endpoint() -> Dict[str, Any]:
+    """
+    Return feature drift check using Population Stability Index (PSI).
+    Compares feature distributions of settled claims at last retrain against recent claims (past 14 days).
+    Returns: {as_of, status, max_psi, features: [{name, psi}]}.
+    Before first retrain, status is 'no model yet'.
+    No label fields anywhere in this response.
+    """
+    from app.pipeline.drift import compute_drift
+    return compute_drift(state.simulated_date)
+

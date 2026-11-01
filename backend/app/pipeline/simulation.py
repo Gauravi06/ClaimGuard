@@ -4,7 +4,7 @@ Data querying logic for simulation (S2).
 Reads backend/data/claims_sim.csv.
 """
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -43,4 +43,18 @@ def get_pending(as_of: date) -> pd.DataFrame:
     cols_to_drop = ["is_fraud", "investigation_days", "label_available_at"]
     df = df.drop(columns=cols_to_drop, errors="ignore")
     
+    return df.reset_index(drop=True)
+
+
+def get_recent_claims(as_of: date, days: int = 14) -> pd.DataFrame:
+    """
+    Return all claims filed in the `days` before `as_of` (pending or settled).
+    Drops label and investigation columns to prevent leakage.
+    """
+    start_date = as_of - timedelta(days=days)
+    mask = (_df_pool["filed_at"] >= start_date) & (_df_pool["filed_at"] <= as_of)
+    df = _df_pool[mask].copy()
+    
+    cols_to_drop = ["is_fraud", "investigation_days", "label_available_at"]
+    df = df.drop(columns=cols_to_drop, errors="ignore")
     return df.reset_index(drop=True)
