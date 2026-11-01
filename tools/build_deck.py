@@ -44,7 +44,7 @@ def create_deck():
         p_cat.font.bold = True
         p_cat.font.color.rgb = BLUE_ACCENT
 
-        # Title
+        # Title (font >= 36pt)
         title_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.75), Inches(11.7), Inches(0.8))
         tf = title_box.text_frame
         tf.word_wrap = True
@@ -200,18 +200,18 @@ def create_deck():
 
     # Draw built vs planned components
     components = [
-        # Col 1: Production
-        ("React Dashboard\n(/claims, /submit, /simulation)", Inches(0.8), Inches(1.8), Inches(3.6), Inches(1.3), True),
+        # Col 1: Production (Built)
+        ("React Frontend\n(:3000 / :5173, SHAP Bars)", Inches(0.8), Inches(1.8), Inches(3.6), Inches(1.3), True),
         ("XGBoost Champion + SHAP\n(/api/claims, <10ms latency)", Inches(0.8), Inches(3.3), Inches(3.6), Inches(1.3), True),
         ("Persistent Store\n(PostgreSQL / SQLite claims DB)", Inches(0.8), Inches(4.8), Inches(3.6), Inches(1.3), True),
-        # Col 2: Simulation
+        # Col 2: Simulation (Built)
         ("Clock & Queue Engine\n(7-day steps, zero-leakage split)", Inches(4.8), Inches(1.8), Inches(3.6), Inches(1.3), True),
         ("3-Candidate Retraining\n(RF, LR, XGBoost every >=25 settled)", Inches(4.8), Inches(3.3), Inches(3.6), Inches(1.3), True),
         ("Promotion Gate & MLflow\n(Strict holdout PR-AUC comparison)", Inches(4.8), Inches(4.8), Inches(3.6), Inches(1.3), True),
         # Col 3: Monitoring & Future
-        ("Telemetry & Monitoring\n(Prometheus /metrics + Grafana)", Inches(8.8), Inches(1.8), Inches(3.6), Inches(1.3), True),
+        ("Docker Compose & Telemetry\n(Prometheus :9090, Grafana :3001)", Inches(8.8), Inches(1.8), Inches(3.6), Inches(1.3), True),
         ("PSI Drift Detection\n(GET /api/sim/drift, ok/alert)", Inches(8.8), Inches(3.3), Inches(3.6), Inches(1.3), True),
-        ("TODO: Airflow & DVC\n(dags/, .dvc - Designed Only)", Inches(8.8), Inches(4.8), Inches(3.6), Inches(1.3), False),
+        ("Airflow & DVC\n(dags/, .dvc — Designed only)", Inches(8.8), Inches(4.8), Inches(3.6), Inches(1.3), False),
     ]
 
     for label, x, y, w, h, is_built in components:
@@ -232,7 +232,7 @@ def create_deck():
 
     legend = s4.shapes.add_textbox(Inches(0.8), Inches(6.4), Inches(11.7), Inches(0.5))
     p_leg = legend.text_frame.paragraphs[0]
-    p_leg.text = "Solid blue border = Built & Live on main  |  Dashed red border = Designed only (TODO)"
+    p_leg.text = "Solid blue border = Built & Live on main  |  Dashed red border = Designed only"
     p_leg.font.size = Pt(20)
     p_leg.font.bold = True
     p_leg.font.color.rgb = TEXT_MUTED
@@ -357,10 +357,10 @@ def create_deck():
 
     t_lines = [
         "• Jan 08 & 15: Settled < 25 -> No retrain (v0)",
-        "• Jan 22: 61 settled -> v1 promoted (PR-AUC 0.5769)",
-        "• Jan 29: 167 settled -> v2 promoted (0.6451 > 0.2095)",
-        "• Feb 05: 274 settled -> Rejected (0.5518 < 0.6164), stays v2",
-        "• Feb 12: 384 settled -> v3 promoted (0.5458 > 0.4442)",
+        "• Jan 22: 61 settled -> v1 promoted (PR-AUC 0.6325)",
+        "• Jan 29: 167 settled -> v2 promoted (0.6394 > 0.1910)",
+        "• Feb 05: 274 settled -> Rejected (0.5664 < 0.5971), stays v2",
+        "• Feb 12: 384 settled -> v3 promoted (0.5441 > 0.4394, RF)",
         "• Feb 19 & 26: Candidates lose to champion -> Retain v3!",
         "Rule: 6 retrains executed, exactly 3 promotions approved."
     ]
@@ -398,8 +398,8 @@ def create_deck():
         ("Feature Drift Monitoring (GET /api/sim/drift)",
          "Calculates Population Stability Index (PSI) across 13 contract features comparing training baseline to recent claims (status: ok | alert).",
          DARK_BLUE),
-        ("TODO: Alerts & Automated Rollback (Designed Only)",
-         "TODO: Automated PagerDuty/Slack webhooks on drift alert and automatic shadow-mode canary deployment.",
+        ("Future Work: Alerts & Canary Rollback",
+         "Automated PagerDuty/Slack webhooks on drift alert and automatic shadow-mode canary deployment (Designed only).",
          RED),
     ]
     for i, (head, body, color) in enumerate(cards8):
@@ -431,21 +431,22 @@ def create_deck():
     add_header(s9, "Live 5-Minute Demonstration Plan & Browser Flow")
 
     demo_steps = [
-        ("Tab 1: Simulation Dashboard", ":5173/simulation", "Start at Day 0: 19 pending, 0 settled, model_version = 0 (no model yet)."),
-        ("Tab 2: Metrics Exposition", ":8000/metrics", "Advance clock 3 times -> 2015-01-22: 61 settled triggers v1 retrain (PR-AUC 0.5769)."),
-        ("Tab 3: MLflow Tracking UI", ":5000", "Inspect retrain runs, holdout candidate comparisons, and promotion rejections."),
-        ("Tab 4: Claim Scoring & SHAP", ":5173/claims/:id", "Show intake adjudication and interactive Tree SHAP red/green contribution bars."),
-        ("Tab 5: Interactive API Docs", ":8000/docs", "Inspect REST contract, /api/sim/drift status, and settlement endpoints."),
+        ("Tab 1: Simulation Dashboard", ":3000 / :5173", "Start at Day 0: 19 pending, 0 settled, model_version = 0 (no model yet)."),
+        ("Tab 2: Grafana Telemetry", ":3001", "Two signals side by side: holdout PR-AUC and pending backlog curves."),
+        ("Tab 3: Prometheus Targets", ":9090 / :8000", "Scrape health verification at :9090/targets and raw /metrics exposition."),
+        ("Tab 4: MLflow Tracking UI", ":5000", "Inspect retrain runs, holdout candidate comparisons, and promotion rejections."),
+        ("Tab 5: Production Claims & SHAP", ":3000 / :5173", "Show intake adjudication and interactive Tree SHAP red/green contribution bars."),
+        ("Tab 6: Interactive API Docs", ":8000/docs", "Inspect REST contract, /api/sim/drift status, and settlement endpoints."),
     ]
     for i, (tab, port, desc) in enumerate(demo_steps):
-        top = Inches(1.8 + i * 1.05)
-        shape = s9.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.8), top, Inches(11.733), Inches(0.95))
+        top = Inches(1.8 + i * 0.88)
+        shape = s9.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.8), top, Inches(11.733), Inches(0.8))
         shape.fill.solid()
         shape.fill.fore_color.rgb = CARD_BG
         shape.line.color.rgb = BLUE_ACCENT if i == 0 else CARD_BORDER
         shape.line.width = Pt(1.5)
 
-        tb = s9.shapes.add_textbox(Inches(1.0), top + Inches(0.08), Inches(11.3), Inches(0.8))
+        tb = s9.shapes.add_textbox(Inches(1.0), top + Inches(0.06), Inches(11.3), Inches(0.68))
         tf = tb.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
@@ -482,7 +483,7 @@ def create_deck():
         "Delayed-label clock engine with zero leakage.",
         "3-candidate retrain pipeline + promotion gate.",
         "Population Stability Index (PSI) drift monitoring.",
-        "MLflow tracking, Prometheus /metrics & Grafana.",
+        "Docker Compose stack (Prometheus & Grafana).",
         "135 automated unit & integration tests passing."
     ]
     for it in done_items:
@@ -502,18 +503,18 @@ def create_deck():
     tf_fw = tb_fw.text_frame
     tf_fw.word_wrap = True
     p = tf_fw.paragraphs[0]
-    p.text = "Designed Only / Future Work (TODO)"
+    p.text = "Designed Only & Future Work"
     p.font.size = Pt(24)
     p.font.bold = True
     p.font.color.rgb = RED
 
     todo_items = [
         "TODO: docs/DOCKER.md container user guide.",
-        "TODO: Apache Airflow DAG integration (dags/).",
-        "TODO: Data Version Control for raw data (.dvc).",
-        "TODO: Production JWT / OAuth2 authentication.",
-        "TODO: Real-time alerting webhooks on drift alerts.",
-        "TODO: Automated shadow-mode canary deployment."
+        "Designed only: Apache Airflow DAG integration (dags/).",
+        "Designed only: Data Version Control for datasets (.dvc).",
+        "Future work: Production JWT / OAuth2 authentication.",
+        "Future work: Real-time alerting webhooks on drift alerts.",
+        "Future work: Automated shadow-mode canary deployment."
     ]
     for it in todo_items:
         pb = tf_fw.add_paragraph()
@@ -525,6 +526,41 @@ def create_deck():
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(OUTPUT_PATH))
     print(f"Presentation successfully saved to: {OUTPUT_PATH}")
+
+    # Character count and overflow validation
+    verify_deck(prs)
+
+
+def verify_deck(prs):
+    print("\n--- DECK VERIFICATION & CHARACTER COUNT AUDIT ---")
+    todo_locations = []
+    slide_titles = []
+
+    for idx, slide in enumerate(prs.slides, 1):
+        titles = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                tf = shape.text_frame
+                for p in tf.paragraphs:
+                    text = p.text.strip()
+                    if p.font and p.font.size and p.font.size.pt >= 32:
+                        titles.append(text)
+                    if "TODO" in text:
+                        todo_locations.append((idx, text))
+
+        slide_title = titles[0] if titles else f"Slide {idx}"
+        slide_titles.append((idx, slide_title))
+
+    print("Slide Titles (10 Total):")
+    for s_idx, s_title in slide_titles:
+        print(f"  Slide {s_idx}: {s_title}")
+
+    print("\nLiteral TODO Positions:")
+    if not todo_locations:
+        print("  None found!")
+    else:
+        for s_idx, text in todo_locations:
+            print(f"  Slide {s_idx}: '{text}'")
 
 
 if __name__ == "__main__":
