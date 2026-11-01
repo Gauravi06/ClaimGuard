@@ -58,6 +58,12 @@ const ClaimDetail = () => {
   const correct = isPredictionCorrect(claim);
   const scoreDeg = (claim.fraud_score * 180).toFixed(2);
   const riskColorClass = getRiskTextColor(claim.risk_level);
+  const hasShap = claim.explanations && claim.explanations.some(
+    (e) => e.shap_value !== undefined && e.shap_value !== null
+  );
+  const maxShap = hasShap
+    ? Math.max(...claim.explanations.map((e) => Math.abs(e.shap_value || 0)), 0.001)
+    : 1;
 
   const Detail = ({ icon: Icon, label, children, span }) => (
     <div className={span ? 'md:col-span-2' : ''}>
@@ -242,32 +248,115 @@ const ClaimDetail = () => {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-            <h3 className="text-base font-bold text-slate-800 mb-4">Feature Explanations</h3>
-            <p className="text-xs text-slate-500 mb-4">Tree-model feature importance behind the risk score.</p>
-
-            <div className="space-y-4">
-              {claim.explanations && claim.explanations.length > 0 ? (
-                claim.explanations.map((exp, idx) => (
-                  <div key={idx}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="font-medium text-slate-700 capitalize">{exp.feature.replace(/_/g, ' ')}</span>
-                      <span className={exp.direction === 'up' ? 'text-red-500' : 'text-green-500'}>
-                        {exp.direction === 'up' ? '↑' : '↓'} {(exp.importance * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 rounded-full h-1.5">
-                      <div
-                        className={`h-1.5 rounded-full ${exp.direction === 'up' ? 'bg-red-400' : 'bg-green-400'}`}
-                        style={{ width: `${Math.min(exp.importance * 100 * 3, 100)}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-xs text-slate-400 mt-1">Value: {exp.value}</div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm text-slate-500 italic text-center py-4">No explanations available.</div>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-base font-bold text-slate-800">
+                {hasShap ? 'Feature Explanations (SHAP)' : 'Feature Explanations'}
+              </h3>
+              {hasShap && (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  Tree SHAP
+                </span>
               )}
             </div>
+            <p className="text-xs text-slate-500 mb-4">
+              {hasShap
+                ? 'Signed SHAP values: red increases risk, green decreases risk.'
+                : 'Tree-model feature importance behind the risk score.'}
+            </p>
+
+            {claim.explanations && claim.explanations.length > 0 ? (
+              hasShap ? (
+                <div className="space-y-3">
+                  <div className="flex justify-between text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1">
+                    <span className="text-emerald-600 flex items-center">← Decreases Risk</span>
+                    <span>0</span>
+                    <span className="text-rose-600 flex items-center">Increases Risk →</span>
+                  </div>
+
+                  {claim.explanations.map((exp, idx) => {
+                    const sVal = typeof exp.shap_value === 'number' ? exp.shap_value : 0;
+                    const isPositive = sVal > 0;
+                    const barWidth = `${Math.min((Math.abs(sVal) / maxShap) * 100, 100).toFixed(1)}%`;
+
+                    return (
+                      <div key={idx} className="bg-slate-50/80 p-3 rounded-lg border border-slate-100 space-y-1.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-semibold text-slate-800 capitalize">
+                            {exp.feature.replace(/_/g, ' ')}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">
+                              Val: <span className="font-medium text-slate-700">{exp.value}</span>
+                            </span>
+                            <span
+                              className={`text-xs font-mono font-bold px-1.5 py-0.5 rounded ${
+                                isPositive
+                                  ? 'text-rose-700 bg-rose-50 border border-rose-200'
+                                  : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                              }`}
+                            >
+                              {isPositive ? '+' : ''}{sVal.toFixed(4)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Horizontal signed bar: left (green) - center divider - right (red) */}
+                        <div className="relative h-3 bg-slate-200/60 rounded flex items-center overflow-hidden">
+                          <div className="w-1/2 h-full flex justify-end items-center pr-[1px]">
+                            {!isPositive && (
+                              <div
+                                className="h-full bg-emerald-500 rounded-l transition-all duration-500"
+                                style={{ width: barWidth }}
+                                title={`Decreases risk by ${Math.abs(sVal).toFixed(4)}`}
+                              ></div>
+                            )}
+                          </div>
+                          <div className="w-[2px] h-full bg-slate-400 z-10"></div>
+                          <div className="w-1/2 h-full flex justify-start items-center pl-[1px]">
+                            {isPositive && (
+                              <div
+                                className="h-full bg-rose-500 rounded-r transition-all duration-500"
+                                style={{ width: barWidth }}
+                                title={`Increases risk by ${sVal.toFixed(4)}`}
+                              ></div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between text-[11px] text-slate-400">
+                          <span className={isPositive ? 'text-rose-600' : 'text-emerald-600'}>
+                            {exp.direction || (isPositive ? 'increases risk' : 'decreases risk')}
+                          </span>
+                          <span>{(exp.importance * 100).toFixed(1)}% base importance</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {claim.explanations.map((exp, idx) => (
+                    <div key={idx}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="font-medium text-slate-700 capitalize">{exp.feature.replace(/_/g, ' ')}</span>
+                        <span className={exp.direction === 'up' ? 'text-red-500' : 'text-green-500'}>
+                          {exp.direction === 'up' ? '↑' : '↓'} {(exp.importance * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div
+                          className={`h-1.5 rounded-full ${exp.direction === 'up' ? 'bg-red-400' : 'bg-green-400'}`}
+                          style={{ width: `${Math.min(exp.importance * 100 * 3, 100)}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1">Value: {exp.value}</div>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              <div className="text-sm text-slate-500 italic text-center py-4">No explanations available.</div>
+            )}
           </div>
         </div>
       </div>
