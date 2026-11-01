@@ -52,7 +52,7 @@ def _create_model_pipeline(classifier_type: str) -> Pipeline:
     """Create full sklearn Pipeline with preprocessor and specified classifier."""
     preprocessor = _build_preprocessing_pipeline()
     if classifier_type == "rf":
-        clf = RandomForestClassifier(n_estimators=100, random_state=42)
+        clf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
     elif classifier_type == "lr":
         clf = LogisticRegression(max_iter=1000, random_state=42)
     elif classifier_type == "xgb":
@@ -60,7 +60,7 @@ def _create_model_pipeline(classifier_type: str) -> Pipeline:
         clf = XGBClassifier(
             n_estimators=100,
             max_depth=5,
-            learning_rate=0.1,
+            learning_rate=0.1, n_jobs=1, tree_method="hist",
             random_state=42,
             eval_metric="logloss"
         )
