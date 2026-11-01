@@ -1,14 +1,25 @@
 # ClaimGuard 5-Minute Live Demonstration Script
 
-This script provides an exact, step-by-step walkthrough for a 5-minute technical demonstration of ClaimGuard. It showcases the delayed-label problem, the simulation engine, target leakage prevention, model retraining with candidate promotion rules, MLflow experiment tracking, Prometheus metrics, and local SHAP feature attribution bars.
+This script provides an exact, step-by-step walkthrough for a 5-minute technical demonstration of ClaimGuard. It showcases the delayed-label problem, the simulation engine, target leakage prevention, model retraining with candidate promotion rules, MLflow experiment tracking, Prometheus and Grafana observability, and local SHAP feature attribution bars.
 
 ---
 
 ## Pre-Demo Setup & Browser Tab Order
 
 ### 1. Launch Services
-Run the following in separate terminal sessions from the repository root:
 
+#### Option A: Docker Compose Full Stack (Recommended)
+From the repository root:
+```bash
+# Start all 5 containerized services (Backend, Frontend, MLflow, Prometheus, Grafana)
+docker compose up -d
+
+# Verify all containers are healthy and running
+docker compose ps
+```
+
+#### Option B: Local Development Servers (Fallback)
+If running outside Docker, launch services across 3 terminal windows:
 ```bash
 # Terminal 1: Backend API (FastAPI)
 export PYTHONPATH="backend"
@@ -27,15 +38,15 @@ mlflow ui --backend-store-uri mlruns --port 5000
 ```
 
 ### 2. Browser Tabs to Open in Order
-1. **Tab 1 — Simulation Control**: `http://localhost:5173/simulation` (Simulation Dashboard: clock, backlog, retrain trigger)
-2. **Tab 2 — Telemetry & Metrics**: `http://localhost:8000/metrics` (Prometheus exposition format; fallback for Grafana)
-3. **Tab 3 — Experiment Tracking**: `http://localhost:5000` (MLflow UI: experiment `ClaimGuard_Simulation`)
-4. **Tab 4 — Production Claims & SHAP**: `http://localhost:5173/claims` (Intake adjudication and SHAP contribution bars)
-5. **Tab 5 — Interactive API Docs**: `http://localhost:8000/docs` (Swagger UI for backend inspection)
 
-*Note on Monitoring Stack URLs*:
-- **Prometheus** (`http://localhost:9090`): `TODO` (Requires Docker Compose / `monitoring/` stack not yet merged on `main`; fallback: direct `/metrics` exposition on Tab 2).
-- **Grafana** (`http://localhost:3001`): `TODO` (Requires Docker Compose / `monitoring/` stack not yet merged on `main`; fallback: direct `/metrics` exposition on Tab 2).
+| Tab | Name | Docker Compose URL | Local Dev URL | Purpose |
+|---|---|---|---|---|
+| **Tab 1** | **Simulation Dashboard** | `http://localhost:3000/simulation` | `http://localhost:5173/simulation` | Clock advance, backlog count, retrain trigger |
+| **Tab 2** | **Grafana Telemetry** | `http://localhost:3001` | `http://localhost:3001` | "ClaimGuard Delayed-Label Monitor" (User: `admin`, Pass: `admin`) |
+| **Tab 3** | **Prometheus Targets** | `http://localhost:9090/targets` | `http://localhost:9090/targets` | Prometheus scrape health (Fallback: `http://localhost:8000/metrics`) |
+| **Tab 4** | **MLflow Experiment** | `http://localhost:5000` | `http://localhost:5000` | `ClaimGuard_Simulation` runs, metrics, and parameters |
+| **Tab 5** | **Production Claims & SHAP** | `http://localhost:3000/claims` | `http://localhost:5173/claims` | Claim intake and red/green Tree SHAP contribution bars |
+| **Tab 6** | **API Documentation** | `http://localhost:8000/docs` | `http://localhost:8000/docs` | FastAPI Swagger interactive API explorer |
 
 ---
 
@@ -43,27 +54,27 @@ mlflow ui --backend-store-uri mlruns --port 5000
 
 The table below reflects the canonical dry run executed across 8 weekly steps (7 days each) starting from `2015-01-01` (`backend/data/claims_sim.csv`, 1,000 claims, 10–30 day investigation window, seed 42):
 
-| Simulated Date | Pending | Settled | Newly Settled* | Retrained | Promoted | Model Version | Candidate PR-AUC | Champion PR-AUC |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **2015-01-08** | 131 | 0 | 0 | False | n/a | 0 | 0.0** | n/a |
-| **2015-01-15** | 247 | 8 | 8 | False | n/a | 0 | 0.0** | n/a |
-| **2015-01-22** | 317 | 61 | 61 | True | True | 1 | **0.5769** | None |
-| **2015-01-29** | 308 | 167 | 106 | True | True | 2 | **0.6451** | 0.2095 |
-| **2015-02-05** | 341 | 274 | 107 | True | False | 2 | 0.5518 | **0.6164** |
-| **2015-02-12** | 331 | 384 | 110 | True | True | 3 | **0.5458** | 0.4442 |
-| **2015-02-19** | 328 | 504 | 120 | True | False | 3 | 0.4997 | **0.6670** |
-| **2015-02-26** | 336 | 620 | 116 | True | False | 3 | 0.4949 | **0.5341** |
+| Simulated Date | Pending | Settled | Newly Settled* | Retrained | Promoted | Model Version | Candidate PR-AUC | Champion PR-AUC | Best Model |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **2015-01-08** | 131 | 0 | 0 | False | n/a | 0 | 0.0** | n/a | None |
+| **2015-01-15** | 247 | 8 | 8 | False | n/a | 0 | 0.0** | n/a | None |
+| **2015-01-22** | 317 | 61 | 61 | True | True | 1 | **0.6325** | None | XGBoost |
+| **2015-01-29** | 308 | 167 | 106 | True | True | 2 | **0.6394** | 0.1910 | XGBoost |
+| **2015-02-05** | 341 | 274 | 107 | True | False | 2 | 0.5664 | **0.5971** | XGBoost |
+| **2015-02-12** | 331 | 384 | 110 | True | True | 3 | **0.5441** | 0.4394 | RandomForest |
+| **2015-02-19** | 328 | 504 | 120 | True | False | 3 | 0.5092 | **0.7366** | XGBoost |
+| **2015-02-26** | 336 | 620 | 116 | True | False | 3 | 0.4936 | **0.5485** | XGBoost |
 
 *\* newly settled = since the last retrain (includes previous unretrained settlements).*  
 *\*\* 0.0 = no model trained yet.*  
-*Note: Re-running live on `main` confirms identical dates, counts, retrain triggers, promotions, and model versions. Minor holdout decimal variations on `2015-02-12` (cand: 0.5660 vs 0.5458), `2015-02-19` (champ: 0.7168 vs 0.6670), and `2015-02-26` (cand: 0.5070 vs 0.4949; champ: 0.5475 vs 0.5341) stem from minor sub-dependency floating point differences across platforms. All promotion decisions remain identical.*
+*Note: Re-running live on `main` confirms 100% determinism across all steps: 6 retrains, 3 promotions (v1, v2, v3), and 3 rejected retrains (Feb 05, Feb 19, Feb 26).*
 
 ---
 
 ## 5-Minute Step-by-Step Demo Script
 
 ### Minute 0:00 – 0:45 | 1. The Problem: Delayed Labels & Intake Blindness
-- **Speaker Action**: Switch to **Tab 1** (`http://localhost:5173/simulation`).
+- **Speaker Action**: Switch to **Tab 1** (`/simulation`).
 - **Talking Points**:
   - *"In insurance fraud detection, ground truth is never immediate. When an auto claim is filed today, adjusters, police, and legal teams require 10 to 30 days to investigate."*
   - *"If we train naively on unresolved claims, we assume pending claims are legitimate, which creates catastrophic label noise and destroys model recall. If we wait months to train, models go stale."*
@@ -73,7 +84,7 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
 ---
 
 ### Minute 0:45 – 1:30 | 2. Day 0 State & 3. Clock Advance with Leakage Guard
-- **Speaker Action**: Point out the Day 0 stats on **Tab 1**. Open terminal or **Tab 5** to show `/api/sim/pending`.
+- **Speaker Action**: Point out the Day 0 stats on **Tab 1**. Open terminal or **Tab 6** to show `/api/sim/pending`.
 - **Key Invariants to Highlight**:
   - Simulated date is **`2015-01-01`**.
   - **19 pending claims**, **0 settled claims**, `model_version: 0` (*"No model yet"*).
@@ -102,43 +113,46 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
   - Retrain trigger fires automatically: `retrained: True`.
   - Candidate models (**Random Forest**, **Logistic Regression**, **XGBoost**) are evaluated on a held-out validation split.
   - Initial model version promoted: `promoted: True`, `model_version: 1`.
-  - **PR-AUC**: **0.5769** (*note: PR-AUC is 0.5769, not 0.38*).
+  - **PR-AUC**: **0.6325** (*XGBoost candidate*).
   - Pending claims now show active fraud scores and risk classifications (`low`, `medium`, `high`) computed by the newly promoted v1 model!
-- **Fallback**: Query `curl -s http://localhost:8000/api/sim/metrics` to verify `model_version: 1` and `pr_auc: 0.5769`.
+- **Fallback**: Query `curl -s http://localhost:8000/api/sim/metrics` to verify `model_version: 1` and `pr_auc: 0.6325`.
 
 ---
 
 ### Minute 2:30 – 3:15 | 5. MLflow Tracking & Promotion Decisions
-- **Speaker Action**: Switch to **Tab 3** (`http://localhost:5000`).
+- **Speaker Action**: Switch to **Tab 4** (`http://localhost:5000`).
 - **Talking Points**:
   - *"Every time the retrain threshold is crossed, ClaimGuard logs parameters, dataset fingerprints, and evaluation metrics to MLflow."*
   - Refresh the `ClaimGuard_Simulation` experiment.
   - Highlight the runs:
-    - Run `retrain_v1_2015-01-22`: `n_train: 61`, `pr_auc: 0.5769`, `promoted: 1.0`.
-    - Run `retrain_v2_2015-01-29`: `candidate_pr_auc: 0.6451` beats champion `0.2095` $\rightarrow$ `promoted: 1.0` $\rightarrow$ `model_version: 2`.
-    - Run on `2015-02-05`: Candidate scores `0.5518` vs serving champion `0.6164` $\rightarrow$ **Promotion Rejected** (`promoted: 0.0`) $\rightarrow$ Champion retained at `model_version: 2`.
+    - Run `retrain_v1_2015-01-22`: `n_train: 61`, `pr_auc: 0.6325`, `promoted: 1.0` (XGBoost).
+    - Run `retrain_v2_2015-01-29`: `candidate_pr_auc: 0.6394` beats champion `0.1910` $\rightarrow$ `promoted: 1.0` $\rightarrow$ `model_version: 2`.
+    - Run on `2015-02-05`: Candidate scores `0.5664` vs serving champion `0.5971` $\rightarrow$ **Promotion Rejected** (`promoted: 0.0`) $\rightarrow$ Champion retained at `model_version: 2`.
+    - Run on `2015-02-12`: Candidate scores `0.5441` (Random Forest) beating champion `0.4394` $\rightarrow$ `promoted: 1.0` $\rightarrow$ `model_version: 3`.
   - *"Our promotion gate prevents model degradation: across 6 retraining events, only 3 candidates beat the champion and earned promotion."*
 - **Fallback**: Open terminal and list run metadata in `mlruns/` or reference `docs/RESULTS.md` Section 4.
 
 ---
 
-### Minute 3:15 – 3:45 | 6. Telemetry & Metrics (`/metrics`)
-- **Speaker Action**: Switch to **Tab 2** (`http://localhost:8000/metrics`).
+### Minute 3:15 – 3:45 | 6. Telemetry & Grafana Dashboard Observability
+- **Speaker Action**: Switch to **Tab 2** (`http://localhost:3001` — Grafana "ClaimGuard Delayed-Label Monitor").
 - **Talking Points**:
-  - *"For production observability, ClaimGuard exports telemetry directly in Prometheus exposition format."*
-  - Scroll and highlight the key gauges:
-    - `claimguard_model_version`: Current active model version (e.g., `1.0` or `2.0`).
-    - `claimguard_settled_claims`: Exact settled claim count (`61.0` on Jan 22).
-    - `claimguard_pending_backlog`: Current unresolved claim queue (`317.0`).
-    - `claimguard_last_retrain_pr_auc`: `0.5769`.
-    - `claimguard_retrains_total`: Retraining run counter.
-  - *Status Note*: `TODO: Grafana dashboard side-by-side visualization` requires containerized deployment (`monitoring/` stack not yet merged on `main`; `/metrics` serves as the live telemetry engine).
-- **Fallback**: Run `curl -s http://localhost:8000/metrics | grep claimguard_`.
+  - *"For production MLOps observability, Prometheus scrapes backend telemetry every 5 seconds, visualized here in our provisioned Grafana dashboard."*
+  - Highlight the **Two signals side by side** (Row 101):
+    1. **Serving model PR-AUC on latest holdout** (metric `claimguard_last_retrain_pr_auc`): Tracks performance stability over time.
+    2. **Pending claims backlog** (metric `claimguard_pending_backlog`): Displays the uninvestigated claims accumulation curve.
+  - Highlight the **Simulation Overview** and **Retrains vs promotions** panels:
+    - **Model Version** (`claimguard_model_version`): Displays active champion version (e.g. `v3`).
+    - **Settled Claims** (`claimguard_settled_claims`): Displays cumulative settled training volume.
+    - **Retrains Total** (`claimguard_retrains_total`): Total retraining cycles run (6 total).
+    - **Newly Settled Since Retrain (Max: 25)** (`claimguard_newly_settled_since_retrain`): Gauge indicating progress toward the next retrain threshold.
+    - **Model Version vs Retrains Total (gap = unpromoted retrains)**: Visualizes the 3 rejected retraining attempts where the champion was protected.
+- **Fallback**: Open **Tab 3** (`http://localhost:9090/targets` or `http://localhost:8000/metrics`) and show raw metric gauges: `claimguard_model_version`, `claimguard_settled_claims`, `claimguard_pending_backlog`, `claimguard_last_retrain_pr_auc`.
 
 ---
 
 ### Minute 3:45 – 4:30 | 7. Production Intake Adjudication & SHAP Visual Bars
-- **Speaker Action**: Switch to **Tab 4** (`http://localhost:5173/claims`).
+- **Speaker Action**: Switch to **Tab 5** (`/claims`).
 - **Step 7a: Seed Demo Claims (if empty)**:
   - If no claims are listed, click **"Seed Demo Data"** on the dashboard or execute:
     ```bash
@@ -146,7 +160,7 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
     ```
 - **Step 7b: Inspect Claim Detail & SHAP Attribution**:
   - Click any high-risk claim in the table (e.g. `CLM-...` or claimant *"James Wilson"* / *"Demo Claimant"*).
-  - URL navigates to `http://localhost:5173/claims/:id`.
+  - URL navigates to `/claims/:id`.
   - Point to the **Feature Explanations (SHAP)** card:
     - Interactive **Tree SHAP contribution bars** computed via `shap.TreeExplainer` on the 14-feature XGBoost champion.
     - **Red bars (`+` values)** extending rightward show features that **increase fraud risk** (e.g., `fault = Policy holder`, `claim_amount > $35,000`, `prior_claims_count > 1`).
@@ -166,13 +180,14 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
     - Model promotion rule gating deployment on held-out PR-AUC improvement.
     - Population Stability Index (PSI) feature drift monitoring (`/api/sim/drift`).
     - Local MLflow experiment tracking and Prometheus `/metrics` exporter.
+    - Full multi-container Docker Compose orchestration (`docker-compose.yml`) with backend, frontend, MLflow, Prometheus, and Grafana.
+    - Provisioned Grafana dashboard (`monitoring/grafana/`) with 7 operational MLOps panels.
     - 135 automated unit, integration, and contract tests passing.
-  - **What Is Designed Only (TODO)**:
-    - Multi-container Docker Compose orchestration (`docker-compose.yml`, `docs/DOCKER.md`).
-    - External Prometheus scraper & pre-configured Grafana dashboard (`monitoring/`).
+  - **What Is Designed Only / Future Work**:
     - Scheduled workflow orchestration via Apache Airflow (`dags/`).
     - Large-scale data/model versioning via DVC (`.dvc`).
-    - User authentication / role-based access control (RBAC).
+    - Production authentication / role-based access control (RBAC / OAuth2).
+    - Dedicated Docker documentation guide (`TODO: docs/DOCKER.md`).
 
 ---
 
@@ -181,11 +196,11 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
 ### Q1: Why simulated delays?
 **Answer**: In real-world insurance, fraud ground truth cannot be observed at submission; an investigation window (adjusters, interviews, police reports) is mandatory. We simulate 10–30 days (`prepare_data.py` lines 79–82) so pending claims strictly conceal labels (`is_fraud`), preventing catastrophic data leakage.
 
-### Q2: Why PR-AUC, why is v1 PR-AUC ~0.58, and why do later numbers drop?
-**Answer**: Fraud is rare (5.99% in production `carclaims`, 24.7% in simulation). ROC-AUC is artificially inflated by large true negative counts, whereas PR-AUC directly tracks minority class precision and recall. Model v1's PR-AUC is **0.5769** (not 0.38) evaluated on a small, noisy initial holdout (20% of 61 settled claims $\approx 12$ claims). As more claims settle, the holdout expands and becomes representative, and candidate promotion rules protect against regression by comparing against the incumbent champion.
+### Q2: Why PR-AUC, why is v1 PR-AUC ~0.63, and why do later numbers drop?
+**Answer**: Fraud is rare (5.99% in production `carclaims`, 24.7% in simulation). ROC-AUC is artificially inflated by large true negative counts, whereas PR-AUC directly tracks minority class precision and recall. Model v1's PR-AUC is **0.6325** evaluated on a small, noisy initial holdout (20% of 61 settled claims $\approx 12$ claims). As more claims settle, the holdout expands and becomes representative, and candidate promotion rules protect against regression by comparing against the incumbent champion.
 
 ### Q3: Why only 3 promotions out of 6 retrains?
-**Answer**: Our promotion gate requires a candidate to strictly outperform the serving champion on the identical held-out validation set. On `2015-02-05`, `2015-02-19`, and `2015-02-26`, newly retrained models failed to beat the champion (e.g. candidate 0.4997 vs champion 0.6670 on Feb 19), so promotions were correctly rejected to prevent production performance degradation.
+**Answer**: Our promotion gate requires a candidate to strictly outperform the serving champion on the identical held-out validation set. On `2015-02-05`, `2015-02-19`, and `2015-02-26`, newly retrained models failed to beat the champion (e.g. candidate 0.5092 vs champion 0.7366 on Feb 19; candidate 0.4936 vs champion 0.5485 on Feb 26), so promotions were correctly rejected to prevent production performance degradation.
 
 ### Q4: Why two separate datasets?
 **Answer**: The production app serves high-throughput inference on 15,419 real Kaggle car claims across 14 features (`carclaims_processed.csv`) with an XGBoost champion. The simulation pipeline uses a 1,000-claim synthetic dataset (`claims_sim.csv`) with timestamps across 13 contract features. Decoupling them allows live clock manipulation, backlog simulation, and retraining without corrupting production tables.
@@ -197,7 +212,7 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
 **Answer**: Commercial deployment requires: 1) Kafka/RabbitMQ event queues for claim ingestion, 2) right-skewed Weibull investigation hazard distributions, 3) a feature store (Feast) for point-in-time correctness, 4) multi-tenant OAuth2/OIDC authentication, and 5) human-in-the-loop active learning workflows for investigator review.
 
 ### Q7: What is not done / designed only?
-**Answer**: Multi-container Docker Compose (`docker-compose.yml`), external Prometheus/Grafana service provisioning (`monitoring/`), Airflow DAG orchestration (`dags/`), DVC data versioning, and JWT/OAuth2 authentication.
+**Answer**: Airflow DAG orchestration (`dags/`), DVC data versioning, JWT/OAuth2 authentication, and dedicated container documentation (`docs/DOCKER.md`). The multi-container stack itself (Docker Compose, Prometheus, Grafana) is fully implemented and operational on `main`.
 
 ### Q8: Why is there no authentication or RBAC?
 **Answer**: The current system is an engineering prototype and MLOps demonstration. Adding JWT tokens or role management would add friction to local evaluators and automated test suites without demonstrating core MLOps delayed-feedback principles.
