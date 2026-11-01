@@ -8,7 +8,6 @@ This document details the architectural layout, simulation demo lifecycle, and c
 
 ```mermaid
 flowchart TD
-    classDef planned stroke-dasharray: 5 5;
 
     subgraph Storage ["Storage & Data Sources"]
         CarClaimsData["carclaims data<br/>data/raw/carclaims.csv<br/>data/processed/carclaims_processed.csv"]
@@ -62,18 +61,16 @@ flowchart TD
     TrainPipeline --> MLflowTracking
     StateHolder --> DriftCheck
     StateHolder --> MetricsRoute
-    MetricsRoute -.-> PrometheusServer
-    PrometheusServer -.-> GrafanaDash
+    MetricsRoute --> PrometheusServer
+    PrometheusServer --> GrafanaDash
 
-    DockerCompose -.-> ProdScoring
-    DockerCompose -.-> SimPipeline
-    DockerCompose -.-> Observability
-    DockerCompose -.-> FrontendUI
-
-    class PrometheusServer,GrafanaDash,DockerCompose planned;
+    DockerCompose --> ProdScoring
+    DockerCompose --> SimPipeline
+    DockerCompose --> Observability
+    DockerCompose --> FrontendUI
 ```
 
-**Legend**: Solid boxes = built components; Dashed boxes = designed only (planned).
+**Legend**: Solid boxes = built components. All core architectural components are built and operational.
 
 ---
 
@@ -93,8 +90,8 @@ sequenceDiagram
     participant Promo as training.py (Promotion Rule)
     participant Track as tracking.py (log_training_run / MLflow)
     participant Metrics as metrics.py (GET /metrics)
-    participant Prom as Prometheus Server [planned]
-    participant Graf as Grafana Dashboard [planned]
+    participant Prom as Prometheus Server
+    participant Graf as Grafana Dashboard
 
     User->>SimRoute: POST /api/sim/advance {"days": 7}
     SimRoute->>State: advance(days=7)
@@ -126,10 +123,10 @@ sequenceDiagram
     Metrics->>State: get_prometheus_metrics()
     State-->>Metrics: Gauges & counters (claimguard_model_version, claimguard_settled_claims, etc.)
     Metrics-->>User: Prometheus Exposition Text
-    Prom->>Metrics: Scrape /metrics [planned]
-    Metrics-->>Prom: Exposition metric samples [planned]
-    Graf->>Prom: Query PromQL metrics [planned]
-    Prom-->>Graf: Render dashboard charts [planned]
+    Prom->>Metrics: Scrape /metrics
+    Metrics-->>Prom: Exposition metric samples
+    Graf->>Prom: Query PromQL metrics
+    Prom-->>Graf: Render dashboard charts
 ```
 
 ---

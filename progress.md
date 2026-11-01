@@ -32,7 +32,13 @@
 - **MLflow Experiment Tracking**: `app/pipeline/tracking.py` logs all retrain runs, parameters (`as_of`, `n_train`, `n_pending`, `model_version`), metrics (`precision`, `recall`, `f1`, `pr_auc`, `candidate_pr_auc`, `champion_pr_auc`), and promotion tags (`promoted`) to local `mlruns/` file store.
 - **Prometheus Metrics Exporter**: Standalone endpoint `GET /metrics` exporting official Prometheus exposition format gauges (`claimguard_model_version`, `claimguard_settled_claims`, `claimguard_pending_backlog`, `claimguard_newly_settled_since_retrain`, `claimguard_last_retrain_pr_auc`, `claimguard_simulated_date_epoch`) and counter (`claimguard_retrains_total`).
 - **React 18 + Tailwind CSS 4 Frontend**: Full single-page application with Overview Dashboard, Claim Submission Form with circular risk gauge, Claims Table & Detail views with SHAP bars, Model Performance dashboard, and dedicated Simulation Dashboard (`SimulationDashboard.jsx`).
-- **Containerization**: Production `backend/Dockerfile` featuring an automated offline champion model training step during build, non-root execution considerations, and health check querying `/`.
+- **Containerization & Multi-Service Orchestration**:
+  - Production `backend/Dockerfile` featuring automated offline champion model training during build and health check querying `/`.
+  - Multi-stage `frontend/Dockerfile` and `frontend/nginx.conf` serving built SPA assets on port 80.
+  - Multi-container orchestration via `docker-compose.yml` deploying backend (`:8000`), frontend (`:3000`), MLflow UI (`:5000`), Prometheus (`:9090`), and Grafana (`:3001`). Comprehensive deployment instructions tracked in `docs/DOCKER.md` *(TODO: docs/DOCKER.md)*.
+- **Prometheus Monitoring & Grafana Dashboards**:
+  - Prometheus v2.54.1 (`monitoring/prometheus.yml`) configured to scrape `backend:8000/metrics` every 5 seconds.
+  - Grafana v11.2.0 (`monitoring/grafana/`) with automated provisioning for Prometheus datasource and `claimguard.json` ("ClaimGuard Delayed-Label Monitor") featuring 7 telemetry panels (Model Version, Settled Claims, Retrains Total, Newly Settled gauge, Serving model PR-AUC, Pending backlog, and Model Version vs Retrains Total).
 - **GitHub Actions CI Workflow**: `.github/workflows/ci.yml` running on push and pull request to `main`, validating backend tests (with XGBoost champion generation and SQLite database initialization) and frontend production build.
 
 ## Tested
@@ -66,28 +72,25 @@
 ## Current Architecture
 
 ```
-React (Vite + Tailwind CSS v4)
-        │
-        │ REST API (JSON)
-        ▼
-FastAPI Backend
- ├── Claims Ingestion & Settlement (/api/claims)
+Docker Compose Orchestration (docker-compose.yml)
+ ├── Frontend (React SPA on Nginx, :3000)
+ ├── Backend API (FastAPI, :8000)
+ │     ├── Claims Ingestion & Settlement (/api/claims)
  │     ├── XGBoost Champion Model (14 features, data/models/xgb_champion.joblib)
- │     ├── Gain/Gini Feature Importance Explanations
- │     └── Tree SHAP Explanations (shap.TreeExplainer + UI Bars)
- ├── Analytics & Metrics (/api/analytics)
- │     └── On-the-fly evaluation on settled claims
- ├── Simulation Pipeline (/api/sim)
- │     ├── Discrete clock & chronological replay (backend/data/claims_sim.csv)
- │     ├── Settled vs. Pending partition (Contract S1/S2)
- │     ├── Automated retraining every 25 settled claims (RF, LR, XGB candidates)
- │     ├── Model promotion gate (Candidate PR-AUC vs Serving Champion)
- │     ├── PSI Drift Detection (/api/sim/drift)
- │     └── MLflow experiment tracking (mlruns/)
- ├── Prometheus Exporter (/metrics)
- │     └── 6 gauges + 1 counter from app/pipeline/state.py
- └── Database Persistence Layer (app/database.py)
-       └── PostgreSQL (Neon) / SQLite (claims table)
+ │     ├── Gain/Gini Feature Importance & Tree SHAP (shap.TreeExplainer + UI Bars)
+ │     ├── Analytics & Dynamic Metrics (/api/analytics)
+ │     ├── Simulation Pipeline (/api/sim)
+ │     │     ├── Discrete clock & chronological replay (backend/data/claims_sim.csv)
+ │     │     ├── Settled vs. Pending partition (Contract S1/S2)
+ │     │     ├── Automated retraining every 25 settled claims (RF, LR, XGB candidates)
+ │     │     ├── Model promotion gate (Candidate PR-AUC vs Serving Champion)
+ │     │     ├── PSI Drift Detection (/api/sim/drift)
+ │     │     └── MLflow experiment tracking (mlruns/)
+ │     └── Prometheus Exporter (/metrics)
+ ├── Database Persistence Layer (PostgreSQL Neon / SQLite claims table)
+ ├── MLflow Tracking UI (:5000, file store /mlruns)
+ ├── Prometheus Server (:9090, scraping /metrics every 5s)
+ └── Grafana Dashboards (:3001, provisioned Delayed-Label Monitor)
 ```
 
 ## Known Limitations
@@ -96,7 +99,7 @@ FastAPI Backend
 - **Simulated Delays**: Delays are generated uniformly between 10 and 30 days (seed 42) rather than drawn from complex empirical hazard curves.
 - **Small Simulation Dataset**: The simulation dataset contains 1,000 claims.
 - **Advisory Drift Monitoring**: Feature drift monitoring via Population Stability Index (PSI) is advisory by default (`DRIFT_TRIGGERS_RETRAIN=False`).
-- **Monitoring Stack Pending Compose**: While `/metrics` is actively exported, external Prometheus server and Grafana dashboard services (`monitoring/`, `docker-compose.yml`) are designed but not yet containerized.
+- **Container Documentation Pending**: Multi-container stack (Compose, Prometheus, Grafana) is built and operational; detailed documentation is tracked in `docs/DOCKER.md`.
 - **No Authentication or RBAC**: API endpoints are public and lack token authentication or role separation.
 - **In-Memory Simulation State**: Simulation state is stored in memory and resets when the server process terminates.
 - **Destructive Seed Endpoint**: `POST /api/seed` wipes the `claims` table prior to inserting test data.
@@ -121,3 +124,9 @@ FastAPI Backend
 - [x] Train and benchmark multiple model architectures (Logistic Regression, Random Forest, XGBoost).
 - [x] Address severe class imbalance using class weights (`scale_pos_weight`) and PR-AUC metric selection.
 - [x] Fast model loading from pre-trained serialized artifact (<10ms serving startup).
+
+### Deployment & Observability
+- [x] Multi-container orchestration via Docker Compose (`docker-compose.yml`).
+- [x] Prometheus server scraping and Grafana dashboard provisioning (`monitoring/`).
+- [ ] Airflow workflow orchestration (`dags/`) (Designed only / Future work).
+- [ ] DVC data and model artifact versioning (Designed only / Future work).

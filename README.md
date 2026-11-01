@@ -245,19 +245,34 @@ mlflow ui --backend-store-uri mlruns --port 5000
 
 ## Run with Docker
 
-ClaimGuard includes a production `backend/Dockerfile` that automatically pre-trains and validates the XGBoost champion model during image build, packaging a self-contained container with persistent volume mounts for SQLite.
+ClaimGuard includes a full multi-container stack orchestrated via `docker-compose.yml`, packaging the FastAPI backend, React frontend, MLflow tracking server, Prometheus metrics scraper, and Grafana monitoring dashboard.
 
 Detailed containerized instructions, volume binding, and multi-service deployment:
 - See `docs/DOCKER.md` *(TODO: docs/DOCKER.md)*
 
+### Launching the Stack
+
 ```bash
-# Build production backend image
-docker build -t claimguard-backend -f backend/Dockerfile .
+# Start all 5 services in detached mode
+docker compose up -d
 
-# Run container with persistent data volume
-docker run -d -p 8000:8000 -v claimguard_data:/data claimguard-backend
+# Verify running containers
+docker compose ps
+```
 
-# TODO: Docker Compose full-stack startup (docker compose up -d) pending compose configuration
+### Container Endpoints & Ports
+
+| Service | Port (Host:Container) | URL | Default Credentials / Config |
+|---|---|---|---|
+| **React Frontend** | `3000:80` | [http://localhost:3000](http://localhost:3000) | Nginx serving production SPA bundle |
+| **Backend API (Swagger Docs)** | `8000:8000` | [http://localhost:8000/docs](http://localhost:8000/docs) | FastAPI REST API & `/metrics` |
+| **MLflow Tracking UI** | `5000:5000` | [http://localhost:5000](http://localhost:5000) | File-backed artifact store (`/mlruns`) |
+| **Prometheus Server** | `9090:9090` | [http://localhost:9090](http://localhost:9090) | Scrapes `backend:8000/metrics` every 5s (targets at `:9090/targets`) |
+| **Grafana Dashboards** | `3001:3000` | [http://localhost:3001](http://localhost:3001) | User: `admin`, Pass: `admin` (sourced from `.env.example` / `GRAFANA_ADMIN_*`) |
+
+```bash
+# Stop all services and networks
+docker compose down
 ```
 
 ---
@@ -343,8 +358,8 @@ Detailed benchmark documentation, settlement-aware vs naive experiment, and live
 | **Population Stability Index (PSI) Drift Check** | **Done** | `backend/app/pipeline/drift.py` and `GET /api/sim/drift` with status `ok` or `alert` |
 | **Empirical Results Documentation** | **Done** | Full documentation and benchmark charts in `docs/RESULTS.md` |
 | **Production Dockerfile** | **Done** | `backend/Dockerfile` with model pre-training step |
-| **Docker Compose Multi-Container Orchestration** | **Designed only** | TODO: docker-compose.yml and docs/DOCKER.md |
-| **Prometheus Server & Grafana Dashboards** | **Designed only** | TODO: monitoring/ (monitoring stack orchestration) |
+| **Docker Compose Multi-Container Orchestration** | **Done** | Multi-service stack (`docker-compose.yml`) orchestrating backend, frontend, MLflow, Prometheus, and Grafana |
+| **Prometheus Server & Grafana Dashboards** | **Done** | Prometheus v2.54.1 scraping `/metrics` every 5s (`monitoring/prometheus.yml`) and Grafana v11.2.0 with provisioned delayed-label monitor dashboard (`monitoring/grafana/`) |
 | **GitHub Actions CI Workflow** | **Done** | `.github/workflows/ci.yml` (backend tests & frontend build) |
 | **Workflow Orchestration (Airflow)** | **Future work** | Designed only; not yet integrated |
 | **Data & Artifact Versioning (DVC)** | **Future work** | Designed only; data tracked via Git/processed CSVs |
@@ -358,7 +373,7 @@ Detailed benchmark documentation, settlement-aware vs naive experiment, and live
 2. **Simulated Delays**: Investigation windows in the simulation dataset are generated synthetically using a fixed uniform window (10–30 days, seed 42) rather than reflecting right-skewed real-world institutional delays.
 3. **Small Simulation Dataset**: The simulation dataset contains 1,000 historical records, designed for demonstration and test verification.
 4. **Advisory Drift Monitoring**: PSI drift calculation (`drift.py`, `/api/sim/drift`) is advisory by default (`DRIFT_TRIGGERS_RETRAIN=False`). It alerts operators when feature drift exceeds threshold without forcing an automatic retraining cycle unless explicitly configured.
-5. **Monitoring Services Pending Compose**: While `/metrics` is actively exported by FastAPI, external Prometheus scraping and Grafana dashboard services (`monitoring/`, `docker-compose.yml`) are designed but not yet containerized.
+5. **Container Setup Documentation**: Multi-container deployment is operational via `docker-compose.yml` with Prometheus (`:9090`) and Grafana (`:3001`). Dedicated container deployment guide is tracked in `docs/DOCKER.md`.
 6. **No Authentication or RBAC**: API endpoints do not require authorization tokens or distinct Adjuster vs Analyst credentials.
 7. **In-Memory Simulation State**: Simulation state (`state.py`) resides in memory and resets across application restarts.
 8. **Dev Seed Behavior**: The development seed endpoints (`POST /api/seed`, `POST /api/dev/seed`) clear existing claims before populating test data.
