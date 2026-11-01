@@ -11,7 +11,7 @@ os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
 import mlflow
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-MLRUNS_DIR = REPO_ROOT / "mlruns"
+MLRUNS_DIR = Path(os.getenv("MLRUNS_DIR")) if os.getenv("MLRUNS_DIR") else REPO_ROOT / "mlruns"
 EXPERIMENT_NAME = "ClaimGuard_Simulation"
 
 
