@@ -1,0 +1,6 @@
+[core]
+    analytics = false
+    remote = localstorage
+['remote "localstorage"']
+    url = /tmp/dvc-storage
+

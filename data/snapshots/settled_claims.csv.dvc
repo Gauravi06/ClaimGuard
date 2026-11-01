@@ -1,0 +1,5 @@
+outs:
+- md5: 8ff1b0cae914e985feea1e9f5cb1aa6f
+  size: 5675
+  hash: md5
+  path: settled_claims.csv
