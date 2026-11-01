@@ -103,18 +103,18 @@ Both pipelines were evaluated at 7-day intervals on the identical holdout set: t
 
 ## 4. Simulation Retraining Results (Live Pipeline)
 
-Below is the live simulation step sequence executed against the ClaimGuard delayed-label retrain engine (minimum 25 settled claims trigger, 7-day advances), using Rashi's dry-run results:
+Below is the live simulation step sequence executed against the ClaimGuard delayed-label retrain engine (minimum 25 settled claims trigger, 7-day advances), using the canonical dry-run results on `main`:
 
-| date | pending | settled | newly settled* | retrained | promoted | model_version | PR-AUC | champion PR-AUC |
+| date | pending | settled | newly settled* | retrained | promoted | model_version | candidate PR-AUC | champion PR-AUC |
 |---|---|---|---|---|---|---|---|---|
 | 2015-01-08 | 131 | 0 | 0 | False | n/a | 0 | 0.0** | n/a |
 | 2015-01-15 | 247 | 8 | 8 | False | n/a | 0 | 0.0** | n/a |
-| 2015-01-22 | 317 | 61 | 61 | True | True | 1 | 0.5769 | None |
-| 2015-01-29 | 308 | 167 | 106 | True | True | 2 | 0.6451 | 0.2095 |
-| 2015-02-05 | 341 | 274 | 107 | True | False | 2 | 0.5518 | 0.6164 |
-| 2015-02-12 | 331 | 384 | 110 | True | True | 3 | 0.5458 | 0.4442 |
-| 2015-02-19 | 328 | 504 | 120 | True | False | 3 | 0.4997 | 0.667 |
-| 2015-02-26 | 336 | 620 | 116 | True | False | 3 | 0.4949 | 0.5341 |
+| 2015-01-22 | 317 | 61 | 61 | True | True | 1 | 0.6325 | None |
+| 2015-01-29 | 308 | 167 | 106 | True | True | 2 | 0.6394 | 0.1910 |
+| 2015-02-05 | 341 | 274 | 107 | True | False | 2 | 0.5664 | 0.5971 |
+| 2015-02-12 | 331 | 384 | 110 | True | True | 3 | 0.5441 | 0.4394 |
+| 2015-02-19 | 328 | 504 | 120 | True | False | 3 | 0.5092 | 0.7366 |
+| 2015-02-26 | 336 | 620 | 116 | True | False | 3 | 0.4936 | 0.5485 |
 
 \* newly settled = since the last retrain (first model's row includes the 8 from the week before). \** 0.0 = no model trained yet.
 
@@ -124,8 +124,8 @@ Below is the live simulation step sequence executed against the ClaimGuard delay
 - **Holdout Evaluation & Metrics**:
   - **PR-AUC**: The candidate model's score on a time-based holdout consisting of the newest 20% of settled claims at that timestep. Because early cohorts contain relatively few settled claims (e.g., 61 total on `2015-01-22`), the holdout metric is naturally noisy for early models.
   - **Champion PR-AUC**: The serving champion model evaluated on the exact same time-based holdout.
-- **First Model Promotion**: The first model's PR-AUC on `2015-01-22` is **0.5769** (not the earlier rough estimate of ~0.38). Because no prior champion existed (`champion PR-AUC: None`), candidate v1 was promoted immediately upon crossing the 25-settled-claim threshold.
-- **Champion Retention**: On `2015-02-05`, `2015-02-19`, and `2015-02-26`, the candidate models scored 0.5518, 0.4997, and 0.4949, failing to beat the serving champion's scores of 0.6164, 0.6670, and 0.5341. Consequently, promotions were rejected (`promoted: False`), and the champion `model_version` was retained.
+- **First Model Promotion**: The first model's PR-AUC on `2015-01-22` is **0.6325** (not the earlier rough estimate of ~0.38). Because no prior champion existed (`champion PR-AUC: None`), candidate v1 was promoted immediately upon crossing the 25-settled-claim threshold.
+- **Champion Retention**: On `2015-02-05`, `2015-02-19`, and `2015-02-26`, the candidate models scored 0.5664, 0.5092, and 0.4936, failing to beat the serving champion's scores of 0.5971, 0.7366, and 0.5485. Consequently, promotions were rejected (`promoted: False`), and the champion `model_version` was retained. On `2015-02-12`, the candidate (Random Forest) scored 0.5441, beating the champion's 0.4394, earning promotion to `model_version: 3`.
 
 ---
 
