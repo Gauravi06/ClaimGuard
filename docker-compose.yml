@@ -10,13 +10,13 @@ services:
         required: false
     environment:
       - DATABASE_URL=sqlite:////data/claims.db
-      - MLRUNS_DIR=${MLRUNS_DIR:-/mlruns}
+      - MLRUNS_DIR=/mlruns
     volumes:
       - claims_data:/data
-      - mlruns_data:${MLRUNS_DIR:-/mlruns}
+      - mlruns_data:/mlruns
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
+    image: ghcr.io/mlflow/mlflow:v3.17.2
     environment:
       - MLFLOW_ALLOW_FILE_STORE=true
     command: mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri file:///mlruns
@@ -35,6 +35,33 @@ services:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
 
 volumes:
   claims_data:
