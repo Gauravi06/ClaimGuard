@@ -8,10 +8,12 @@ This document details the architectural layout, simulation demo lifecycle, and c
 
 ```mermaid
 flowchart TD
+    classDef planned stroke-dasharray: 5 5;
 
     subgraph Storage ["Storage & Data Sources"]
         CarClaimsData["carclaims data<br/>data/raw/carclaims.csv<br/>data/processed/carclaims_processed.csv"]
         SimClaimsCSV["claims_sim.csv<br/>backend/data/claims_sim.csv"]
+        DVCData["DVC Tracking (.dvc)<br/>scripts/snapshot_settled.py<br/>data/snapshots/"]
         AppDatabase[("Application DB<br/>Neon PostgreSQL / SQLite")]
     end
 
@@ -31,6 +33,7 @@ flowchart TD
         PromotionRule["Candidate Promotion Rule<br/>PR-AUC vs Serving Champion"]
         DriftCheck["PSI Drift Monitor<br/>backend/app/pipeline/drift.py<br/>GET /api/sim/drift"]
         MLflowTracking["MLflow Tracking<br/>backend/app/pipeline/tracking.py<br/>mlruns/"]
+        AirflowDAG["Airflow Retrain DAG<br/>dags/claimguard_retrain.py<br/>(written, not run in Airflow)"]
     end
 
     subgraph Observability ["Observability & Deployment"]
@@ -51,6 +54,7 @@ flowchart TD
     ScoringAPI --> AppDatabase
 
     SimClaimsCSV --> SplitLogic
+    SplitLogic -->|Snapshot cohort| DVCData
     ReactDashboard --> SimClock
     ReactDashboard --> ScoringAPI
     SimClock --> StateHolder
@@ -59,6 +63,7 @@ flowchart TD
     RetrainTrigger -->|Yes| TrainPipeline
     TrainPipeline --> PromotionRule
     TrainPipeline --> MLflowTracking
+    AirflowDAG -.->|Schedules @daily| TrainPipeline
     StateHolder --> DriftCheck
     StateHolder --> MetricsRoute
     MetricsRoute --> PrometheusServer
@@ -68,9 +73,11 @@ flowchart TD
     DockerCompose --> SimPipeline
     DockerCompose --> Observability
     DockerCompose --> FrontendUI
+
+    class AirflowDAG planned;
 ```
 
-**Legend**: Solid boxes = built components. All core architectural components are built and operational.
+**Legend**: Solid boxes = built components; Dashed boxes = designed only (written, not run in Airflow).
 
 ---
 

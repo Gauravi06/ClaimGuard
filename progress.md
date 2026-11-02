@@ -35,7 +35,8 @@
 - **Containerization & Multi-Service Orchestration**:
   - Production `backend/Dockerfile` featuring automated offline champion model training during build and health check querying `/`.
   - Multi-stage `frontend/Dockerfile` and `frontend/nginx.conf` serving built SPA assets on port 80.
-  - Multi-container orchestration via `docker-compose.yml` deploying backend (`:8000`), frontend (`:3000`), MLflow UI (`:5000`), Prometheus (`:9090`), and Grafana (`:3001`). Comprehensive deployment instructions tracked in `docs/DOCKER.md` *(TODO: docs/DOCKER.md)*.
+  - Multi-container orchestration via `docker-compose.yml` deploying backend (`:8000`), frontend (`:3000`), MLflow UI (`:5000`), Prometheus (`:9090`), and Grafana (`:3001`). Comprehensive deployment instructions planned in `docs/DOCKER.md`.
+- **Data Version Control (DVC)**: Initialized DVC repository tracking (`.dvc/config`, local storage `/tmp/dvc-storage`). Created `.dvc` tracking pointers for raw claims (`data/raw/carclaims.csv.dvc`), processed features (`data/processed/carclaims_processed.csv.dvc`), simulation pool (`backend/data/claims_sim.csv.dvc`), and dynamic cohort snapshots (`data/snapshots/settled_claims.csv.dvc`). Implemented `scripts/snapshot_settled.py` CLI to snapshot settled cohorts at simulation cutoffs and log MD5 hashes to MLflow. Documented in [docs/DVC.md](docs/DVC.md).
 - **Prometheus Monitoring & Grafana Dashboards**:
   - Prometheus v2.54.1 (`monitoring/prometheus.yml`) configured to scrape `backend:8000/metrics` every 5 seconds.
   - Grafana v11.2.0 (`monitoring/grafana/`) with automated provisioning for Prometheus datasource and `claimguard.json` ("ClaimGuard Delayed-Label Monitor") featuring 7 telemetry panels (Model Version, Settled Claims, Retrains Total, Newly Settled gauge, Serving model PR-AUC, Pending backlog, and Model Version vs Retrains Total).
@@ -85,8 +86,10 @@ Docker Compose Orchestration (docker-compose.yml)
  │     │     ├── Automated retraining every 25 settled claims (RF, LR, XGB candidates)
  │     │     ├── Model promotion gate (Candidate PR-AUC vs Serving Champion)
  │     │     ├── PSI Drift Detection (/api/sim/drift)
- │     │     └── MLflow experiment tracking (mlruns/)
+ │     │     ├── MLflow experiment tracking (mlruns/)
+ │     │     └── DVC Cohort Snapshotting (scripts/snapshot_settled.py)
  │     └── Prometheus Exporter (/metrics)
+ ├── Workflow Orchestration: Airflow DAG (dags/claimguard_retrain.py — written, not run)
  ├── Database Persistence Layer (PostgreSQL Neon / SQLite claims table)
  ├── MLflow Tracking UI (:5000, file store /mlruns)
  ├── Prometheus Server (:9090, scraping /metrics every 5s)
@@ -99,7 +102,8 @@ Docker Compose Orchestration (docker-compose.yml)
 - **Simulated Delays**: Delays are generated uniformly between 10 and 30 days (seed 42) rather than drawn from complex empirical hazard curves.
 - **Small Simulation Dataset**: The simulation dataset contains 1,000 claims.
 - **Advisory Drift Monitoring**: Feature drift monitoring via Population Stability Index (PSI) is advisory by default (`DRIFT_TRIGGERS_RETRAIN=False`).
-- **Container Documentation Pending**: Multi-container stack (Compose, Prometheus, Grafana) is built and operational; detailed documentation is tracked in `docs/DOCKER.md`.
+- **Container Documentation Pending**: Multi-container stack (Compose, Prometheus, Grafana) is built and operational; detailed documentation is planned in `docs/DOCKER.md`.
+- **Airflow Orchestration**: `dags/claimguard_retrain.py` is written and syntax-checked with task definitions for threshold checks, retraining, and promotion evaluation, but is not run in a live Airflow environment ([docs/AIRFLOW.md](docs/AIRFLOW.md)).
 - **No Authentication or RBAC**: API endpoints are public and lack token authentication or role separation.
 - **In-Memory Simulation State**: Simulation state is stored in memory and resets when the server process terminates.
 - **Destructive Seed Endpoint**: `POST /api/seed` wipes the `claims` table prior to inserting test data.
@@ -128,5 +132,5 @@ Docker Compose Orchestration (docker-compose.yml)
 ### Deployment & Observability
 - [x] Multi-container orchestration via Docker Compose (`docker-compose.yml`).
 - [x] Prometheus server scraping and Grafana dashboard provisioning (`monitoring/`).
-- [ ] Airflow workflow orchestration (`dags/`) (Designed only / Future work).
-- [ ] DVC data and model artifact versioning (Designed only / Future work).
+- [x] DVC data and model artifact versioning (data versioning via .dvc pointers & snapshot CLI; [docs/DVC.md](docs/DVC.md)).
+- [ ] Airflow workflow orchestration (DAG written and syntax-checked in `dags/claimguard_retrain.py`, not run in Airflow; [docs/AIRFLOW.md](docs/AIRFLOW.md)).

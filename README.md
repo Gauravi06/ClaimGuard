@@ -40,6 +40,8 @@ ClaimGuard solves this problem by separating the platform into two interconnecte
 | PSI Drift Detection (`/api/sim/drift`) | Population Stability Index (PSI) monitoring feature distribution shifts across 13 contract features between the reference training cohort and recent simulation claims (`backend/app/pipeline/drift.py`). | **Done** |
 | Prometheus Observability (`/metrics`) | Export of simulation gauges (`claimguard_model_version`, `claimguard_settled_claims`, `claimguard_pending_backlog`, `claimguard_newly_settled_since_retrain`, `claimguard_last_retrain_pr_auc`, `claimguard_simulated_date_epoch`) and retrain counter (`claimguard_retrains_total`). | **Done** |
 | Simulation UI Dashboard | Interactive React control panel for advancing the clock, visualizing pending backlogs, triggering retrains, and charting model evolution. | **Done** |
+| Data Version Control (DVC) | Cryptographic dataset versioning (`.dvc`) tracking raw data, processed features, simulation pools, and settled snapshots via `scripts/snapshot_settled.py` ([docs/DVC.md](docs/DVC.md)). | **Done** |
+| Workflow Orchestration (Airflow) | Daily retraining workflow (`dags/claimguard_retrain.py`) defining threshold evaluation, candidate training, and promotion checks ([docs/AIRFLOW.md](docs/AIRFLOW.md)). | **Designed only** (DAG written and syntax-checked, not run in Airflow) |
 
 ---
 
@@ -248,7 +250,7 @@ mlflow ui --backend-store-uri mlruns --port 5000
 ClaimGuard includes a full multi-container stack orchestrated via `docker-compose.yml`, packaging the FastAPI backend, React frontend, MLflow tracking server, Prometheus metrics scraper, and Grafana monitoring dashboard.
 
 Detailed containerized instructions, volume binding, and multi-service deployment:
-- See `docs/DOCKER.md` *(TODO: docs/DOCKER.md)*
+- Comprehensive container guide planned in `docs/DOCKER.md` (Future work)
 
 ### Launching the Stack
 
@@ -361,8 +363,8 @@ Detailed benchmark documentation, settlement-aware vs naive experiment, and live
 | **Docker Compose Multi-Container Orchestration** | **Done** | Multi-service stack (`docker-compose.yml`) orchestrating backend, frontend, MLflow, Prometheus, and Grafana |
 | **Prometheus Server & Grafana Dashboards** | **Done** | Prometheus v2.54.1 scraping `/metrics` every 5s (`monitoring/prometheus.yml`) and Grafana v11.2.0 with provisioned delayed-label monitor dashboard (`monitoring/grafana/`) |
 | **GitHub Actions CI Workflow** | **Done** | `.github/workflows/ci.yml` (backend tests & frontend build) |
-| **Workflow Orchestration (Airflow)** | **Future work** | Designed only; not yet integrated |
-| **Data & Artifact Versioning (DVC)** | **Future work** | Designed only; data tracked via Git/processed CSVs |
+| **Workflow Orchestration (Airflow)** | **Designed only** | DAG written and syntax-checked (`dags/claimguard_retrain.py`), not run in Airflow. See [docs/AIRFLOW.md](docs/AIRFLOW.md). |
+| **Data & Artifact Versioning (DVC)** | **Done** | Data versioning configured with local storage (`.dvc/config`), `.dvc` tracking files, and settled cohort snapshot utility (`scripts/snapshot_settled.py`). See [docs/DVC.md](docs/DVC.md). |
 | **Production Authentication & RBAC** | **Future work** | Unauthenticated MVP endpoints |
 
 ---
@@ -373,7 +375,8 @@ Detailed benchmark documentation, settlement-aware vs naive experiment, and live
 2. **Simulated Delays**: Investigation windows in the simulation dataset are generated synthetically using a fixed uniform window (10–30 days, seed 42) rather than reflecting right-skewed real-world institutional delays.
 3. **Small Simulation Dataset**: The simulation dataset contains 1,000 historical records, designed for demonstration and test verification.
 4. **Advisory Drift Monitoring**: PSI drift calculation (`drift.py`, `/api/sim/drift`) is advisory by default (`DRIFT_TRIGGERS_RETRAIN=False`). It alerts operators when feature drift exceeds threshold without forcing an automatic retraining cycle unless explicitly configured.
-5. **Container Setup Documentation**: Multi-container deployment is operational via `docker-compose.yml` with Prometheus (`:9090`) and Grafana (`:3001`). Dedicated container deployment guide is tracked in `docs/DOCKER.md`.
+5. **Container Setup Documentation**: Multi-container deployment is operational via `docker-compose.yml` with Prometheus (`:9090`) and Grafana (`:3001`). Comprehensive container deployment guide is planned in `docs/DOCKER.md`.
 6. **No Authentication or RBAC**: API endpoints do not require authorization tokens or distinct Adjuster vs Analyst credentials.
 7. **In-Memory Simulation State**: Simulation state (`state.py`) resides in memory and resets across application restarts.
 8. **Dev Seed Behavior**: The development seed endpoints (`POST /api/seed`, `POST /api/dev/seed`) clear existing claims before populating test data.
+9. **Airflow Orchestration**: The periodic retraining DAG (`dags/claimguard_retrain.py`) has been written and syntax-checked with task definitions for threshold checks, retraining, and promotion evaluation, but is not run in a live Airflow environment ([docs/AIRFLOW.md](docs/AIRFLOW.md)).
