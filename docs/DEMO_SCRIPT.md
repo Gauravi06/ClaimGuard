@@ -16,6 +16,12 @@ docker compose up -d
 
 # Verify all containers are healthy and running
 docker compose ps
+
+# Smoke test backend health check
+curl -s http://localhost:8000/
+
+# (After demo: stop all containers and networks)
+docker compose down
 ```
 
 #### Option B: Local Development Servers (Fallback)
@@ -187,11 +193,11 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
     - Scheduled workflow orchestration via Apache Airflow (`dags/`).
     - Large-scale data/model versioning via DVC (`.dvc`).
     - Production authentication / role-based access control (RBAC / OAuth2).
-    - Dedicated Docker documentation guide (`TODO: docs/DOCKER.md`).
+    - Dedicated Docker documentation guide (`Planned in docs/DOCKER.md`).
 
 ---
 
-## 9. 10-Question Cheat Sheet for Reviewers
+## 9. 12-Question Cheat Sheet for Reviewers
 
 ### Q1: Why simulated delays?
 **Answer**: In real-world insurance, fraud ground truth cannot be observed at submission; an investigation window (adjusters, interviews, police reports) is mandatory. We simulate 10–30 days (`prepare_data.py` lines 79–82) so pending claims strictly conceal labels (`is_fraud`), preventing catastrophic data leakage.
@@ -222,3 +228,9 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
 
 ### Q10: Why is feature drift (PSI) advisory rather than an automatic hard retrain trigger?
 **Answer**: Retraining blindly on unverified pending claims when drift occurs would introduce massive label noise (the exact pitfall shown in our naive experiment). In `backend/app/pipeline/drift.py`, PSI alerts operators (`status: 'alert'`) to investigate shift causes rather than immediately retraining without confirmed ground truth.
+
+### Q11: How does DVC handle data versioning under delayed feedback?
+**Answer**: As claims settle chronologically, training cohorts expand (61 at Day 21, 167 at Day 28). DVC versioning decouples dataset growth from Git via .dvc pointer files (carclaims.csv.dvc, carclaims_processed.csv.dvc, claims_sim.csv.dvc). The utility scripts/snapshot_settled.py snapshots the exact settled training cohort as of any simulated cutoff date, computes its cryptographic MD5 checksum, and logs it to MLflow (docs/DVC.md). This guarantees point-in-time training reproducibility without bloating Git history.
+
+### Q12: What is the status of the Airflow retraining DAG?
+**Answer**: The Airflow DAG (dags/claimguard_retrain.py) has been written and syntax-checked with task definitions for checking settled counts (check_settled_count), executing candidate training (task_train_and_log), verifying promotion (task_promote_check), and notifying the API (task_notify_api). However, as stated in docs/AIRFLOW.md, it is **designed and syntax-checked but was not run in Airflow**. In our live demo, retraining is orchestrated directly by the internal simulation engine (app/pipeline/state.py).
