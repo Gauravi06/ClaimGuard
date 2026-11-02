@@ -208,10 +208,10 @@ def create_deck():
         ("Clock & Queue Engine\n(7-day steps, zero-leakage split)", Inches(4.8), Inches(1.8), Inches(3.6), Inches(1.3), True),
         ("3-Candidate Retraining\n(RF, LR, XGBoost every >=25 settled)", Inches(4.8), Inches(3.3), Inches(3.6), Inches(1.3), True),
         ("Promotion Gate & MLflow\n(Strict holdout PR-AUC comparison)", Inches(4.8), Inches(4.8), Inches(3.6), Inches(1.3), True),
-        # Col 3: Monitoring & Future
-        ("Docker Compose & Telemetry\n(Prometheus :9090, Grafana :3001)", Inches(8.8), Inches(1.8), Inches(3.6), Inches(1.3), True),
-        ("PSI Drift Detection\n(GET /api/sim/drift, ok/alert)", Inches(8.8), Inches(3.3), Inches(3.6), Inches(1.3), True),
-        ("Airflow & DVC\n(dags/, .dvc — Designed only)", Inches(8.8), Inches(4.8), Inches(3.6), Inches(1.3), False),
+        # Col 3: Monitoring & Versioning
+        ("Docker Compose & Monitoring\n(Prometheus :9090, Grafana :3001)", Inches(8.8), Inches(1.8), Inches(3.6), Inches(1.3), True),
+        ("DVC Data Versioning\n(.dvc, snapshot_settled.py)", Inches(8.8), Inches(3.3), Inches(3.6), Inches(1.3), True),
+        ("Airflow Retrain DAG\n(dags/ — written, not run)", Inches(8.8), Inches(4.8), Inches(3.6), Inches(1.3), False),
     ]
 
     for label, x, y, w, h, is_built in components:
@@ -232,7 +232,7 @@ def create_deck():
 
     legend = s4.shapes.add_textbox(Inches(0.8), Inches(6.4), Inches(11.7), Inches(0.5))
     p_leg = legend.text_frame.paragraphs[0]
-    p_leg.text = "Solid blue border = Built & Live on main  |  Dashed red border = Designed only"
+    p_leg.text = "Solid blue border = Built & Live on main  |  Dashed red border = Designed only (written, not run in Airflow)"
     p_leg.font.size = Pt(20)
     p_leg.font.bold = True
     p_leg.font.color.rgb = TEXT_MUTED
@@ -395,11 +395,11 @@ def create_deck():
         ("Prometheus Telemetry (/metrics) & Grafana (Port 3001)",
          "Real-time gauges: claimguard_model_version, claimguard_settled_claims, claimguard_pending_backlog. Pre-provisioned Grafana dashboard on main.",
          GREEN),
-        ("Feature Drift Monitoring (GET /api/sim/drift)",
-         "Calculates Population Stability Index (PSI) across 13 contract features comparing training baseline to recent claims (status: ok | alert).",
+        ("Feature Drift (PSI) & DVC Versioning",
+         "PSI feature drift monitoring (status: ok | alert) and DVC cohort snapshotting (scripts/snapshot_settled.py) logging MD5 hashes to MLflow.",
          DARK_BLUE),
-        ("Future Work: Alerts & Canary Rollback",
-         "Automated PagerDuty/Slack webhooks on drift alert and automatic shadow-mode canary deployment (Designed only).",
+        ("Designed Only: Airflow Retraining DAG",
+         "Airflow DAG written and syntax-checked in dags/claimguard_retrain.py, ready for containerized scheduler (not run locally).",
          RED),
     ]
     for i, (head, body, color) in enumerate(cards8):
@@ -484,6 +484,7 @@ def create_deck():
         "3-candidate retrain pipeline + promotion gate.",
         "Population Stability Index (PSI) drift monitoring.",
         "Docker Compose stack (Prometheus & Grafana).",
+        "DVC dataset versioning & snapshot CLI (docs/DVC.md).",
         "135 automated unit & integration tests passing."
     ]
     for it in done_items:
@@ -509,12 +510,11 @@ def create_deck():
     p.font.color.rgb = RED
 
     todo_items = [
-        "TODO: docs/DOCKER.md container user guide.",
-        "Designed only: Apache Airflow DAG integration (dags/).",
-        "Designed only: Data Version Control for datasets (.dvc).",
+        "Designed only: Airflow DAG (written, not run in Airflow).",
+        "Future work: Automated PagerDuty/Slack drift alerts.",
+        "Future work: Automated shadow-mode canary deployment.",
         "Future work: Production JWT / OAuth2 authentication.",
-        "Future work: Real-time alerting webhooks on drift alerts.",
-        "Future work: Automated shadow-mode canary deployment."
+        "Future work: Comprehensive docs/DOCKER.md user guide."
     ]
     for it in todo_items:
         pb = tf_fw.add_paragraph()
@@ -557,7 +557,7 @@ def verify_deck(prs):
 
     print("\nLiteral TODO Positions:")
     if not todo_locations:
-        print("  None found!")
+        print("  None found! (0 literal TODOs)")
     else:
         for s_idx, text in todo_locations:
             print(f"  Slide {s_idx}: '{text}'")
