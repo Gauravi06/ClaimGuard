@@ -188,10 +188,10 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
     - Local MLflow experiment tracking and Prometheus `/metrics` exporter.
     - Full multi-container Docker Compose orchestration (`docker-compose.yml`) with backend, frontend, MLflow, Prometheus, and Grafana.
     - Provisioned Grafana dashboard (`monitoring/grafana/`) with 7 operational MLOps panels.
+    - Data Version Control (DVC) tracking `.dvc` files and cohort snapshot CLI (`scripts/snapshot_settled.py`).
     - 135 automated unit, integration, and contract tests passing.
   - **What Is Designed Only / Future Work**:
-    - Scheduled workflow orchestration via Apache Airflow (`dags/`).
-    - Large-scale data/model versioning via DVC (`.dvc`).
+    - Scheduled workflow orchestration via Apache Airflow (DAG written and syntax-checked, not run in Airflow; `dags/claimguard_retrain.py`).
     - Production authentication / role-based access control (RBAC / OAuth2).
     - Dedicated Docker documentation guide (`Planned in docs/DOCKER.md`).
 
@@ -218,7 +218,7 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
 **Answer**: Commercial deployment requires: 1) Kafka/RabbitMQ event queues for claim ingestion, 2) right-skewed Weibull investigation hazard distributions, 3) a feature store (Feast) for point-in-time correctness, 4) multi-tenant OAuth2/OIDC authentication, and 5) human-in-the-loop active learning workflows for investigator review.
 
 ### Q7: What is not done / designed only?
-**Answer**: Airflow DAG orchestration (`dags/`), DVC data versioning, JWT/OAuth2 authentication, and dedicated container documentation (`docs/DOCKER.md`). The multi-container stack itself (Docker Compose, Prometheus, Grafana) is fully implemented and operational on `main`.
+**Answer**: Workflow orchestration via Apache Airflow is designed only (DAG written and syntax-checked, not run in Airflow; `dags/claimguard_retrain.py`, `docs/AIRFLOW.md`), production JWT/OAuth2 authentication, and dedicated container documentation (`docs/DOCKER.md`). DVC data versioning (`docs/DVC.md`), the multi-container stack (Docker Compose, Prometheus, Grafana), and all pipeline features are fully implemented and operational on `main`.
 
 ### Q8: Why is there no authentication or RBAC?
 **Answer**: The current system is an engineering prototype and MLOps demonstration. Adding JWT tokens or role management would add friction to local evaluators and automated test suites without demonstrating core MLOps delayed-feedback principles.
@@ -230,7 +230,7 @@ The table below reflects the canonical dry run executed across 8 weekly steps (7
 **Answer**: Retraining blindly on unverified pending claims when drift occurs would introduce massive label noise (the exact pitfall shown in our naive experiment). In `backend/app/pipeline/drift.py`, PSI alerts operators (`status: 'alert'`) to investigate shift causes rather than immediately retraining without confirmed ground truth.
 
 ### Q11: How does DVC handle data versioning under delayed feedback?
-**Answer**: As claims settle chronologically, training cohorts expand (61 at Day 21, 167 at Day 28). DVC versioning decouples dataset growth from Git via .dvc pointer files (carclaims.csv.dvc, carclaims_processed.csv.dvc, claims_sim.csv.dvc). The utility scripts/snapshot_settled.py snapshots the exact settled training cohort as of any simulated cutoff date, computes its cryptographic MD5 checksum, and logs it to MLflow (docs/DVC.md). This guarantees point-in-time training reproducibility without bloating Git history.
+**Answer**: As claims settle chronologically, training cohorts expand (61 at Day 21, 167 at Day 28). DVC versioning decouples dataset growth from Git via `.dvc` pointer files (`carclaims.csv.dvc`, `carclaims_processed.csv.dvc`, `claims_sim.csv.dvc`). The utility `scripts/snapshot_settled.py` snapshots the exact settled training cohort as of any simulated cutoff date, computes its cryptographic MD5 checksum, and writes companion `.dvc` pointer files (`docs/DVC.md`). This guarantees point-in-time training reproducibility without bloating Git history.
 
 ### Q12: What is the status of the Airflow retraining DAG?
-**Answer**: The Airflow DAG (dags/claimguard_retrain.py) has been written and syntax-checked with task definitions for checking settled counts (check_settled_count), executing candidate training (task_train_and_log), verifying promotion (task_promote_check), and notifying the API (task_notify_api). However, as stated in docs/AIRFLOW.md, it is **designed and syntax-checked but was not run in Airflow**. In our live demo, retraining is orchestrated directly by the internal simulation engine (app/pipeline/state.py).
+**Answer**: The Airflow DAG (`dags/claimguard_retrain.py`) has been written and syntax-checked with task definitions for checking settled counts (`check_settled_count`), executing candidate training (`task_train_and_log`), verifying promotion (`task_promote_check`), and notifying the API (`task_notify_api`). However, as stated in `docs/AIRFLOW.md`, it is **DAG written and syntax-checked, not run in Airflow**. In our live demo, retraining is orchestrated directly by the internal simulation engine (`app/pipeline/state.py`).

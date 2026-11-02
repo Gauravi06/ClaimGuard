@@ -396,10 +396,10 @@ def create_deck():
          "Real-time gauges: claimguard_model_version, claimguard_settled_claims, claimguard_pending_backlog. Pre-provisioned Grafana dashboard on main.",
          GREEN),
         ("Feature Drift (PSI) & DVC Versioning",
-         "PSI feature drift monitoring (status: ok | alert) and DVC cohort snapshotting (scripts/snapshot_settled.py) logging MD5 hashes to MLflow.",
+         "PSI feature drift monitoring (status: ok | alert) and DVC cohort snapshotting (scripts/snapshot_settled.py) generating companion .dvc pointers.",
          DARK_BLUE),
         ("Designed Only: Airflow Retraining DAG",
-         "Airflow DAG written and syntax-checked in dags/claimguard_retrain.py, ready for containerized scheduler (not run locally).",
+         "Airflow DAG written and syntax-checked in dags/claimguard_retrain.py (DAG written and syntax-checked, not run in Airflow).",
          RED),
     ]
     for i, (head, body, color) in enumerate(cards8):
